@@ -32,7 +32,7 @@ test('password login, host key trust on first use, commands, cwd and exit codes'
   const { store, ssh, prompts } = setup({ answers: { hostkey: 'trust' } });
   t.after(() => ssh.disconnectAll());
 
-  const s = store.upsertServer({ name: 'local', host: '127.0.0.1', port: srv.port, username: 'deploy', auth: 'password', password: 's3cret' });
+  const s = await store.upsertServer({ name: 'local', host: '127.0.0.1', port: srv.port, username: 'deploy', auth: 'password', password: 's3cret' });
   await ssh.connect(s.id);
   assert.equal(prompts.filter((p) => p.kind === 'hostkey').length, 1);
   assert.match(prompts[0].payload.fingerprint, /^SHA256:/);
@@ -62,7 +62,7 @@ test('a changed host key is reported and rejected by default', async (t) => {
   t.after(() => srv.close());
   const { store, ssh, prompts } = setup({ answers: { hostkey: null } });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
   store.trustHost('127.0.0.1', srv.port, { type: 'ssh-ed25519', fingerprint: 'SHA256:old' });
 
   await assert.rejects(ssh.connect(s.id), (err) => err.code === 'HOSTKEY_REJECTED');
@@ -75,7 +75,7 @@ test('wrong password gives a clear error', async (t) => {
   const srv = await startServer({ root: tempDir(), user: { username: 'u', password: 'right' } });
   t.after(() => srv.close());
   const { store, ssh } = setup({ answers: { hostkey: 'once', 'keyboard-interactive': null } });
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'wrong' });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'wrong' });
   await assert.rejects(ssh.connect(s.id), (err) => /Authentication failed|cancelled/i.test(err.message));
 });
 
@@ -84,7 +84,7 @@ test('asks for the password when set to "ask every time"', async (t) => {
   t.after(() => srv.close());
   const { store, ssh, prompts } = setup({ answers: { hostkey: 'once', password: 'typed' } });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'password', askPassword: true });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'password', askPassword: true });
   await ssh.connect(s.id);
   assert.ok(prompts.some((p) => p.kind === 'password'));
 });
@@ -99,7 +99,7 @@ test('keyboard-interactive login with a one-time code (2FA)', async (t) => {
     },
   });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'interactive' });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'interactive' });
   await ssh.connect(s.id);
   const kbd = prompts.find((p) => p.kind === 'keyboard-interactive');
   assert.equal(kbd.payload.prompts.length, 2);
@@ -115,7 +115,7 @@ test('private key login with a passphrase prompt', async (t) => {
 
   const { store, ssh, prompts } = setup({ answers: { hostkey: 'once', passphrase: 'open sesame' } });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'key', keyPath: keyFile });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'key', keyPath: keyFile });
   await ssh.connect(s.id);
   assert.ok(prompts.some((p) => p.kind === 'passphrase'));
   assert.ok(ssh.isConnected(s.id));
@@ -127,7 +127,7 @@ test('pasted private key without passphrase', async (t) => {
   t.after(() => srv.close());
   const { store, ssh } = setup({ answers: { hostkey: 'once' } });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'key', keyText: keys.private });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', auth: 'key', keyText: keys.private });
   await ssh.connect(s.id);
   assert.ok(ssh.isConnected(s.id));
 });
@@ -140,8 +140,8 @@ test('connects through a jump host', async (t) => {
   const { store, ssh, prompts } = setup({ answers: { hostkey: 'trust' } });
   t.after(() => ssh.disconnectAll());
 
-  const j = store.upsertServer({ name: 'bastion', host: '127.0.0.1', port: bastion.port, username: 'jump', password: 'jp' });
-  const s = store.upsertServer({ name: 'app', host: '127.0.0.1', port: inner.port, username: 'app', password: 'ap', jumpId: j.id });
+  const j = await store.upsertServer({ name: 'bastion', host: '127.0.0.1', port: bastion.port, username: 'jump', password: 'jp' });
+  const s = await store.upsertServer({ name: 'app', host: '127.0.0.1', port: inner.port, username: 'app', password: 'ap', jumpId: j.id });
   await ssh.connect(s.id);
   assert.equal(prompts.filter((p) => p.kind === 'hostkey').length, 2, 'both hosts are verified');
   const out = collect(ssh, 'jr');
@@ -154,7 +154,7 @@ test('interactive shell session', async (t) => {
   t.after(() => srv.close());
   const { store, ssh } = setup({ answers: { hostkey: 'once' } });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
   await ssh.connect(s.id);
   const { shellId } = await ssh.openShell(s.id, { cols: 100, rows: 30 });
   let output = '';
@@ -182,7 +182,7 @@ test('SFTP: browse, edit with conflict check, upload, download, rename, delete',
   t.after(() => srv.close());
   const { store, ssh } = setup({ answers: { hostkey: 'once' } });
   t.after(() => ssh.disconnectAll());
-  const s = store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
   await ssh.connect(s.id);
 
   const home = await ssh.home(s.id);
@@ -242,7 +242,31 @@ test('SFTP: browse, edit with conflict check, upload, download, rename, delete',
 
 test('friendly error for a closed port', async () => {
   const { store, ssh } = setup({ answers: {} });
-  const s = store.upsertServer({ host: '127.0.0.1', port: 1, username: 'u', auth: 'agent' });
+  const s = await store.upsertServer({ host: '127.0.0.1', port: 1, username: 'u', auth: 'agent' });
   store.updateSettings({ agentPath: '/nonexistent.sock' });
   await assert.rejects(ssh.connect(s.id), (e) => /refused|agent/i.test(e.message));
+});
+
+test('time spent answering prompts does not count toward the login timeout', async (t) => {
+  const srv = await startServer({ root: tempDir(), user: { username: 'u', password: 'p' } });
+  t.after(() => srv.close());
+  const slow = () => new Promise((r) => setTimeout(() => r('trust'), 700));
+  const { store, ssh } = setup({ answers: { hostkey: slow } });
+  t.after(() => ssh.disconnectAll());
+  ssh.readyTimeout = 400;
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
+  await ssh.connect(s.id);
+  assert.ok(ssh.isConnected(s.id));
+});
+
+test('an unresponsive host times out', async (t) => {
+  const net = require('net');
+  const socks = new Set();
+  const silent = net.createServer((sock) => socks.add(sock)); // accepts TCP but never speaks SSH
+  await new Promise((r) => silent.listen(0, '127.0.0.1', r));
+  t.after(() => { for (const sk of socks) sk.destroy(); silent.close(); });
+  const { store, ssh } = setup({ answers: {} });
+  ssh.readyTimeout = 300;
+  const s = await store.upsertServer({ host: '127.0.0.1', port: silent.address().port, username: 'u', auth: 'interactive' });
+  await assert.rejects(ssh.connect(s.id), (e) => e.code === 'ETIMEDOUT');
 });

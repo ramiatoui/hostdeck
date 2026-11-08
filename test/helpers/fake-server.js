@@ -109,7 +109,12 @@ function startServer({ root, user, hostKey }) {
 
         session.on('shell', (accept) => {
           const stream = accept();
-          const child = spawn('sh', [], { cwd: path.join(root, 'home') });
+          // Use a real pseudo-terminal (via util-linux "script") when available,
+          // so input echo and Enter behave like a real SSH server.
+          const usePty = (process.env.PATH || '').split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, 'script')));
+          const child = usePty
+            ? spawn('script', ['-qfc', 'sh -i', '/dev/null'], { cwd: path.join(root, 'home'), env: { ...process.env, TERM: 'xterm-256color', PS1: '$ ' } })
+            : spawn('sh', [], { cwd: path.join(root, 'home') });
           child.stdout.on('data', (d) => stream.write(d));
           child.stderr.on('data', (d) => stream.stderr.write(d));
           stream.on('data', (d) => child.stdin.write(d));

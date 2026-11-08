@@ -113,6 +113,7 @@ class SshManager extends EventEmitter {
     this.prompt = prompt;
     this.env = env;
     this.platform = platform;
+    this.readyTimeout = 20000;
     this.conns = new Map(); // serverId -> { client, jumps: Client[], sftp, pending }
     this.runs = new Map(); // runId -> stream
     this.shells = new Map(); // shellId -> { stream, serverId }
@@ -192,7 +193,7 @@ class SshManager extends EventEmitter {
   async _open(serverId, depth, chain) {
     if (depth > MAX_JUMP_DEPTH) throw new SshError('JUMP_LOOP', 'Too many jump hosts (or a loop in the jump host chain).');
     if (chain.includes(serverId)) throw new SshError('JUMP_LOOP', 'The jump host chain contains a loop.');
-    const server = this.store.getServer(serverId, { withSecrets: true });
+    const server = await this.store.getServerWithSecrets(serverId);
     if (!server) throw new SshError('NOT_FOUND', 'Server not found');
 
     let sock;
@@ -279,9 +280,21 @@ class SshManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       const client = new Client();
       let settled = false;
+      // Our own login timeout, paused while the user answers a prompt.
+      let timer = null;
+      const startTimer = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => done(new SshError('ETIMEDOUT', `Timed out connecting to ${server.host}:${server.port}.`)), this.readyTimeout);
+      };
+      const pauseTimer = () => clearTimeout(timer);
+      const asking = (promise) => {
+        pauseTimer();
+        return promise.finally(() => { if (!settled) startTimer(); });
+      };
       const done = (err) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         if (err) {
           client.end();
           reject(err);
@@ -302,12 +315,12 @@ class SshManager extends EventEmitter {
           answeredStoredPassword = true;
           return finish([storedPassword]);
         }
-        this.prompt('keyboard-interactive', {
+        asking(this.prompt('keyboard-interactive', {
           server: this._label(server),
           name,
           instructions,
           prompts: prompts.map((p) => ({ prompt: p.prompt, echo: Boolean(p.echo) })),
-        }).then((answers) => {
+        })).then((answers) => {
           if (!answers) {
             done(new SshError('CANCELLED', 'Connection cancelled'));
             return;
@@ -320,12 +333,12 @@ class SshManager extends EventEmitter {
         host: server.host,
         port: server.port,
         username: server.username,
-        readyTimeout: 20000,
+        readyTimeout: 0, // handled by our own timer above
         keepaliveInterval: server.keepAlive ? server.keepAlive * 1000 : 0,
         keepaliveCountMax: 3,
         tryKeyboard: true,
         hostVerifier: (key, verify) => {
-          this._verifyHost(server, key).then((ok) => {
+          asking(this._verifyHost(server, key)).then((ok) => {
             if (!ok) done(new SshError('HOSTKEY_REJECTED', `Host key for ${server.host} was not trusted.`));
             verify(ok);
           }, (err) => {
@@ -340,6 +353,7 @@ class SshManager extends EventEmitter {
       if (server.legacyAlgorithms) config.algorithms = LEGACY_ALGORITHMS;
 
       try {
+        startTimer();
         client.connect(config);
       } catch (err) {
         done(friendlyError(err, server));

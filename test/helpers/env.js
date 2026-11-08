@@ -10,13 +10,13 @@ function testCipher({ available = true, backend = 'test' } = {}) {
   return {
     available: () => available,
     backend: () => backend,
-    encrypt(text) {
+    async encrypt(text) {
       const iv = crypto.randomBytes(12);
       const c = crypto.createCipheriv('aes-256-gcm', key, iv);
       const enc = Buffer.concat([c.update(text, 'utf8'), c.final()]);
       return Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64');
     },
-    decrypt(b64) {
+    async decrypt(b64) {
       const buf = Buffer.from(b64, 'base64');
       const d = crypto.createDecipheriv('aes-256-gcm', key, buf.subarray(0, 12));
       d.setAuthTag(buf.subarray(12, 28));

@@ -93,7 +93,7 @@ class Store {
     };
   }
 
-  _seal(value) {
+  async _seal(value) {
     if (!value) return null;
     if (!this.cipher.available()) {
       throw new Error('Secure storage is not available on this system. Use an SSH key, the SSH agent, or "Ask every time".');
@@ -101,7 +101,7 @@ class Store {
     return this.cipher.encrypt(value);
   }
 
-  _open(sealed) {
+  async _open(sealed) {
     if (!sealed) return '';
     return this.cipher.decrypt(sealed);
   }
@@ -122,13 +122,18 @@ class Store {
     return this.data.servers.map((s) => this._publicServer(s));
   }
 
-  getServer(id, { withSecrets = false } = {}) {
+  getServer(id) {
+    const s = this.data.servers.find((x) => x.id === id);
+    return s ? this._publicServer(s) : null;
+  }
+
+  /** Server including decrypted secrets, for connecting. Never sent to the UI. */
+  async getServerWithSecrets(id) {
     const s = this.data.servers.find((x) => x.id === id);
     if (!s) return null;
-    if (!withSecrets) return this._publicServer(s);
     const out = { ...s };
     delete out.secrets;
-    for (const f of SECRET_FIELDS) out[f] = this._open(s.secrets && s.secrets[f]);
+    for (const f of SECRET_FIELDS) out[f] = await this._open(s.secrets && s.secrets[f]);
     return out;
   }
 
@@ -136,7 +141,7 @@ class Store {
    * Create or update a server. Secret fields follow these rules:
    * undefined keeps the stored value, '' clears it, any other string replaces it.
    */
-  upsertServer(input) {
+  async upsertServer(input) {
     if (!input || typeof input !== 'object') throw new Error('Invalid server');
     const host = String(input.host || '').trim();
     if (!host) throw new Error('Host is required');
@@ -144,6 +149,14 @@ class Store {
 
     const existing = input.id ? this.data.servers.find((x) => x.id === input.id) : null;
     if (input.jumpId && input.jumpId === input.id) throw new Error('A server cannot be its own jump host');
+
+    // Encrypt new secrets first, so a failure leaves the stored server untouched.
+    const sealed = {};
+    for (const f of SECRET_FIELDS) {
+      if (input[f] === undefined || input[f] === '' || input[f] === null) continue;
+      if (f === 'password' && input.askPassword) continue;
+      sealed[f] = await this._seal(String(input[f]));
+    }
 
     const server = existing || { id: newId(), createdAt: Date.now(), secrets: {} };
     Object.assign(server, {
@@ -169,7 +182,7 @@ class Store {
     for (const f of SECRET_FIELDS) {
       if (input[f] === undefined) continue;
       if (input[f] === '' || input[f] === null) delete server.secrets[f];
-      else server.secrets[f] = this._seal(String(input[f]));
+      else if (sealed[f]) server.secrets[f] = sealed[f];
     }
     if (server.askPassword) delete server.secrets.password;
 
@@ -299,14 +312,14 @@ class Store {
     };
   }
 
-  importData(payload) {
+  async importData(payload) {
     if (!payload || payload.app !== 'hostdeck' || !Array.isArray(payload.servers)) {
       throw new Error('This file is not a Hostdeck export');
     }
     const idMap = {};
     let added = 0;
     for (const s of payload.servers) {
-      const created = this.upsertServer({ ...s, id: undefined, jumpId: '' });
+      const created = await this.upsertServer({ ...s, id: undefined, jumpId: '' });
       idMap[s.id] = created.id;
       added += 1;
     }

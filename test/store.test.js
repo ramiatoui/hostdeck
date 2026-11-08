@@ -4,46 +4,48 @@ const fs = require('fs');
 const { makeStore } = require('./helpers/env');
 const { parseSshConfig } = require('../src/main/sshconfig');
 
-test('secrets are encrypted on disk and kept, replaced or cleared on update', () => {
+test('secrets are encrypted on disk and kept, replaced or cleared on update', async () => {
   const { store } = makeStore();
-  const s = store.upsertServer({ name: 'web', host: 'example.org', username: 'ubuntu', auth: 'password', password: 'hunter2-super-secret' });
+  const s = await store.upsertServer({ name: 'web', host: 'example.org', username: 'ubuntu', auth: 'password', password: 'hunter2-super-secret' });
   assert.equal(s.hasPassword, true);
   assert.equal(s.password, undefined, 'public view never exposes secrets');
 
   const raw = fs.readFileSync(store.file, 'utf8');
   assert.ok(!raw.includes('hunter2-super-secret'), 'password must not be stored in plain text');
-  assert.equal(store.getServer(s.id, { withSecrets: true }).password, 'hunter2-super-secret');
+  assert.equal((await store.getServerWithSecrets(s.id)).password, 'hunter2-super-secret');
 
-  store.upsertServer({ id: s.id, host: 'example.org', name: 'web2' });
-  assert.equal(store.getServer(s.id, { withSecrets: true }).password, 'hunter2-super-secret', 'undefined keeps the secret');
+  await store.upsertServer({ id: s.id, host: 'example.org', name: 'web2' });
+  assert.equal((await store.getServerWithSecrets(s.id)).password, 'hunter2-super-secret', 'undefined keeps the secret');
 
-  store.upsertServer({ id: s.id, host: 'example.org', password: '' });
+  await store.upsertServer({ id: s.id, host: 'example.org', password: '' });
   assert.equal(store.getServer(s.id).hasPassword, false, 'empty string clears the secret');
 });
 
-test('file is private to the user', { skip: process.platform === 'win32' }, () => {
+test('file is private to the user', { skip: process.platform === 'win32' }, async () => {
   const { store } = makeStore();
-  store.upsertServer({ host: 'a.example' });
+  await store.upsertServer({ host: 'a.example' });
   assert.equal(fs.statSync(store.file).mode & 0o777, 0o600);
 });
 
-test('refuses to store secrets without secure storage', () => {
+test('refuses to store secrets without secure storage', async () => {
   const { store } = makeStore({ available: false });
-  assert.throws(() => store.upsertServer({ host: 'x', password: 'p' }), /Secure storage is not available/);
-  assert.doesNotThrow(() => store.upsertServer({ host: 'x', auth: 'password', askPassword: true }));
+  await assert.rejects(store.upsertServer({ host: 'x', password: 'p' }), /Secure storage is not available/);
+  assert.equal(store.listServers().length, 0, 'nothing is saved when encryption fails');
+  await store.upsertServer({ host: 'x', auth: 'password', askPassword: true, password: 'ignored' });
+  assert.equal(store.listServers()[0].hasPassword, false);
 });
 
-test('export leaves secrets out and import re-links jump hosts', () => {
+test('export leaves secrets out and import re-links jump hosts', async () => {
   const { store } = makeStore();
-  const bastion = store.upsertServer({ name: 'bastion', host: 'b.example', password: 'pw' });
-  store.upsertServer({ name: 'db', host: '10.0.0.5', jumpId: bastion.id, auth: 'agent' });
+  const bastion = await store.upsertServer({ name: 'bastion', host: 'b.example', password: 'pw' });
+  await store.upsertServer({ name: 'db', host: '10.0.0.5', jumpId: bastion.id, auth: 'agent' });
   store.upsertSnippet({ name: 'disk', command: 'df -h' });
 
   const exported = store.exportData();
   assert.ok(!JSON.stringify(exported).includes('secrets'));
 
   const { store: other } = makeStore();
-  const res = other.importData(exported);
+  const res = await other.importData(exported);
   assert.equal(res.added, 2);
   const servers = other.listServers();
   const b2 = servers.find((x) => x.name === 'bastion');
@@ -53,7 +55,7 @@ test('export leaves secrets out and import re-links jump hosts', () => {
   assert.equal(other.listSnippets()[0].command, 'df -h');
 });
 
-test('history keeps the newest unique commands first', () => {
+test('history keeps the newest unique commands first', async () => {
   const { store } = makeStore();
   store.addHistory('s1', 'uptime');
   store.addHistory('s1', 'df -h');
@@ -61,15 +63,15 @@ test('history keeps the newest unique commands first', () => {
   assert.deepEqual(store.getHistory('s1'), ['uptime', 'df -h']);
 });
 
-test('deleting a jump host unlinks servers that used it', () => {
+test('deleting a jump host unlinks servers that used it', async () => {
   const { store } = makeStore();
-  const j = store.upsertServer({ host: 'jump' });
-  const t = store.upsertServer({ host: 'target', jumpId: j.id });
+  const j = await store.upsertServer({ host: 'jump' });
+  const t = await store.upsertServer({ host: 'target', jumpId: j.id });
   store.deleteServer(j.id);
   assert.equal(store.getServer(t.id).jumpId, '');
 });
 
-test('parses ~/.ssh/config hosts with defaults and ProxyJump', () => {
+test('parses ~/.ssh/config hosts with defaults and ProxyJump', async () => {
   const hosts = parseSshConfig(`
 # production
 Host web prod-web
