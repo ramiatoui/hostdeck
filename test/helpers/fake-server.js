@@ -27,7 +27,7 @@ function attrsOf(st) {
  * @param {{username:string,password?:string,publicKey?:string,otp?:string}} opts.user
  * @param {string} [opts.hostKey] PEM/OpenSSH private host key
  */
-function startServer({ root, user, hostKey }) {
+function startServer({ root, user, hostKey, port = 0 }) {
   const key = hostKey || utils.generateKeyPairSync('ed25519').private;
   const allowedKey = user.publicKey ? utils.parseKey(user.publicKey) : null;
   fs.mkdirSync(path.join(root, 'home'), { recursive: true });
@@ -229,7 +229,7 @@ function startServer({ root, user, hostKey }) {
   });
 
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(port, '127.0.0.1', () => {
       resolve({
         server,
         port: server.address().port,
