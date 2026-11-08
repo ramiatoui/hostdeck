@@ -21,3 +21,19 @@ jobs:
       - run: npm ci
       - run: npm run build:renderer
       - run: npm test
+
+  # Catches packaging problems (like native files that break the universal
+  # macOS app) before a release is attempted.
+  package-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:renderer
+      - run: npx electron-builder --mac dir --universal --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
