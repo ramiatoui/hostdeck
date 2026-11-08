@@ -1,10 +1,14 @@
 name: Release
 
-# Push a tag like v0.1.0 to build installers for Linux, Windows and macOS
-# and publish them as a GitHub Release.
+# Builds installers for Linux, Windows and macOS and publishes them as a
+# GitHub Release. Start it either way:
+#  - Actions tab > Release > Run workflow (tags v<package.json version>), or
+#  - push a tag like v0.1.0.
+# A release you drafted on GitHub for the same tag gets the files attached.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -55,6 +59,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist-all/* \
-            --title "Hostdeck ${GITHUB_REF_NAME#v}" \
-            --notes-file .github/release-notes.md
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v$(node -p "require('./package.json').version")"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist-all/* --clobber
+          else
+            gh release create "$TAG" dist-all/* \
+              --target "$GITHUB_SHA" \
+              --title "Hostdeck ${TAG#v}" \
+              --notes-file .github/release-notes.md
+          fi

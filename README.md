@@ -46,7 +46,7 @@ Project layout:
 
 ## Releases
 
-Push a version tag (for example `v0.1.0`) and GitHub Actions builds AppImage and .deb (x64, arm64), a Windows installer and portable .exe, and a universal macOS .dmg and .zip, then attaches them to a GitHub release. Builds are not code-signed yet.
+Open **Actions → Release → Run workflow** (it tags `v` + the version in `package.json`), or push a version tag such as `v0.1.0`. GitHub Actions then builds AppImage and .deb (x64, arm64), a Windows installer and portable .exe, and a universal macOS .dmg and .zip, then publishes them with checksums as a GitHub release. Builds are not code-signed yet.
 
 ## Website
 
