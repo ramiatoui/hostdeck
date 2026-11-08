@@ -17,6 +17,8 @@ const options = {
   target: ['chrome120'],
   sourcemap: watch ? 'inline' : false,
   minify: !watch,
+  loader: { '.woff2': 'file', '.woff': 'file' },
+  assetNames: 'fonts/[name]-[hash]',
   logLevel: 'info',
 };
 
