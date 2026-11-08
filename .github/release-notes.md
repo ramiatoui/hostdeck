@@ -1,4 +1,8 @@
-The first release of Hostdeck, a local-first SSH server manager for Linux, Windows and macOS.
+Hostdeck is a local-first SSH server manager for Linux, Windows and macOS.
+
+## Changes in 0.1.1
+
+- Linux: the app icon now shows in the applications menu, dock and taskbar after installing the .deb or running the AppImage.
 
 ## Download
 
@@ -11,7 +15,7 @@ The first release of Hostdeck, a local-first SSH server manager for Linux, Windo
 
 These builds are not code-signed yet. Windows may show “Windows protected your PC” (choose More info, then Run anyway), and on macOS Control-click the app and choose Open the first time. See the [install guide](https://ramiatoui.com/hostdeck/docs/#install). `SHA256SUMS.txt` lists checksums for every file.
 
-## What's in it
+## Features
 
 - Save servers in groups; run commands and read output, errors, exit code and duration
 - Keep a connection open for more commands, or let it close after each run

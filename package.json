@@ -1,7 +1,7 @@
 {
   "name": "hostdeck",
   "productName": "Hostdeck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local-first SSH server manager for Linux, Windows and macOS. Save your servers, run commands, open terminals and edit files over SFTP.",
   "main": "src/main/main.js",
   "author": {
@@ -97,7 +97,8 @@
       "category": "Network",
       "maintainer": "Rami Atoui",
       "synopsis": "Local-first SSH server manager",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "icon": "build/icons"
     },
     "win": {
       "target": [
