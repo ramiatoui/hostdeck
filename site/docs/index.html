@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation · Hostdeck</title>
+  <meta name="description" content="How to install and use Hostdeck: adding servers, every SSH login method, running commands, the terminal, files, jump hosts, host keys and where your data is stored.">
+  <meta name="theme-color" content="#121822">
+  <link rel="icon" type="image/png" href="../assets/favicon.png">
+  <link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <div class="wrap">
+    <header class="top">
+      <a class="logo" href="../"><img src="../assets/icon.png" alt="" width="30" height="30">Hostdeck</a>
+      <nav aria-label="Main">
+        <a href="../#features" class="hide-sm">Features</a>
+        <a href="./" aria-current="page">Docs</a>
+        <a href="https://github.com/ramiatoui/hostdeck" class="hide-sm">GitHub</a>
+        <a class="btn small primary" href="../#download">Download</a>
+      </nav>
+    </header>
+
+    <div class="docs">
+      <nav class="toc" aria-label="On this page">
+        <p>Get started</p>
+        <a href="#install">Install</a>
+        <a href="#quick-start">Quick start</a>
+        <p>Servers</p>
+        <a href="#add-server">Add a server</a>
+        <a href="#auth">Sign-in methods</a>
+        <a href="#jump">Jump hosts</a>
+        <a href="#host-keys">Host keys</a>
+        <a href="#import">Import from SSH config</a>
+        <p>Working on a server</p>
+        <a href="#run">Run commands</a>
+        <a href="#terminal">Terminal</a>
+        <a href="#files">Files and editing</a>
+        <p>Reference</p>
+        <a href="#shortcuts">Keyboard shortcuts</a>
+        <a href="#data">Your data and security</a>
+        <a href="#settings">Settings</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#source">Build from source</a>
+      </nav>
+
+      <article class="doc" id="content">
+        <h1>Hostdeck documentation</h1>
+        <p class="intro">Hostdeck keeps a list of the servers you reach over SSH and lets you run commands, open a terminal, and work with files on them. It runs on Linux, Windows and macOS, and everything it stores stays on your computer.</p>
+
+        <h2 id="install">Install</h2>
+        <p>Download the file for your system from the <a href="https://github.com/ramiatoui/hostdeck/releases/latest">latest release</a>.</p>
+
+        <h3>Linux</h3>
+        <p><strong>AppImage</strong> (any distribution): make it executable, then run it.</p>
+<pre>chmod +x Hostdeck-*.AppImage
+./Hostdeck-*.AppImage</pre>
+        <p>On Ubuntu 22.04 and later, AppImages need FUSE 2. If it does not start, install it with <code>sudo apt install libfuse2t64</code> (Ubuntu 24.04) or <code>sudo apt install libfuse2</code> (22.04).</p>
+        <p><strong>Debian / Ubuntu package</strong>:</p>
+<pre>sudo apt install ./Hostdeck-*.deb</pre>
+        <p>To save passwords securely, Hostdeck uses your desktop's secret service (GNOME Keyring or KWallet). Most desktops have one running already. See <a href="#data">Your data and security</a> for what happens without one.</p>
+
+        <h3>Windows</h3>
+        <p>Run the installer, or use the portable <code>.exe</code> if you prefer not to install anything. Because the app is not code-signed yet, Windows SmartScreen may show “Windows protected your PC”. Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+
+        <h3>macOS</h3>
+        <p>Open the <code>.dmg</code> and drag Hostdeck into Applications. The app works on Apple silicon and Intel Macs. It is not notarized yet, so the first time, Control-click the app and choose <strong>Open</strong>, then confirm. If macOS still refuses, go to System Settings → Privacy &amp; Security and choose <strong>Open Anyway</strong>, or run:</p>
+<pre>xattr -dr com.apple.quarantine /Applications/Hostdeck.app</pre>
+
+        <h2 id="quick-start">Quick start</h2>
+        <ol>
+          <li>Click <strong>Add server</strong>. Enter the address (for example <code>51.15.204.18</code> or <code>server.example.com</code>), the username (often <code>ubuntu</code>, <code>ec2-user</code>, <code>debian</code> or <code>root</code>) and how you sign in.</li>
+          <li>Choose <strong>Save and connect</strong>. The first time, Hostdeck shows the server's fingerprint and asks you to trust it.</li>
+          <li>In the <strong>Run</strong> tab, type a command such as <code>df -h</code> and press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac).</li>
+        </ol>
+        <p>That's it. Next time, pick the server from the list and run.</p>
+        <figure>
+          <img class="shot" src="../assets/run.webp" width="2560" height="1586" loading="lazy" alt="The Run tab with a server list on the left, a command box, three command results and recent commands">
+          <figcaption>The Run tab: the server list, the command box, results and recent commands.</figcaption>
+        </figure>
+
+        <h2 id="add-server">Add a server</h2>
+        <p>Click <strong>+</strong> at the top of the server list, or press <kbd>Ctrl</kbd>+<kbd>N</kbd>. To change a server later, right-click it (or use the <strong>⋯</strong> button next to its name) and choose <strong>Edit</strong>.</p>
+        <table>
+          <thead><tr><th>Field</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Name</td><td>How the server appears in the list. Defaults to the host.</td></tr>
+            <tr><td>Group</td><td>Optional. Servers with the same group are listed together, such as Production and Staging.</td></tr>
+            <tr><td>Host and Port</td><td>IP address or hostname, and the SSH port (usually 22).</td></tr>
+            <tr><td>Username</td><td>The account to sign in as.</td></tr>
+            <tr><td>Sign in with</td><td>Password, private key, SSH agent or 2FA prompts. See <a href="#auth">Sign-in methods</a>.</td></tr>
+          </tbody>
+        </table>
+        <p>Under <strong>More options</strong>:</p>
+        <table>
+          <tbody>
+            <tr><td>Jump host</td><td>Connect through another saved server. See <a href="#jump">Jump hosts</a>.</td></tr>
+            <tr><td>Start folder</td><td>Where the file browser opens and where new terminals start, for example <code>/var/www</code>.</td></tr>
+            <tr><td>Keepalive</td><td>Seconds between keepalive messages so idle connections are not dropped by firewalls. Default 30, 0 turns it off.</td></tr>
+            <tr><td>Color</td><td>A colored tab in the server list, handy for marking production.</td></tr>
+            <tr><td>Notes</td><td>Anything you want to remember about the server.</td></tr>
+            <tr><td>Allow legacy algorithms</td><td>Enables older key exchange, ciphers and host key types for old servers and network devices. Leave it off unless a connection fails with a “no matching algorithm” error.</td></tr>
+          </tbody>
+        </table>
+        <p>Changing the address, username or sign-in details of a connected server closes its connection, so the next action uses the new settings.</p>
+
+        <h2 id="auth">Sign-in methods</h2>
+        <h3>Password</h3>
+        <p>Type the password and Hostdeck saves it encrypted with your system keychain. If you would rather not store it, tick <strong>Ask for the password every time</strong>; it is then used for that connection only.</p>
+
+        <h3>Private key</h3>
+        <p>Choose a key file with <strong>Browse</strong>, for example <code>~/.ssh/id_ed25519</code> or the <code>.pem</code> file AWS gave you for an EC2 instance. Only the path is saved; the key stays where it is. You can also open <strong>Paste a key instead</strong> and paste the key text, which is then stored encrypted.</p>
+        <p>OpenSSH, PEM (RSA, ECDSA) and Ed25519 keys work. If the key has a passphrase, save it in the form or leave it empty to be asked when you connect. PuTTY <code>.ppk</code> files need converting first with PuTTYgen (Conversions → Export OpenSSH key).</p>
+
+        <h3>SSH agent</h3>
+        <p>Uses the keys already loaded in your SSH agent, so Hostdeck never sees them.</p>
+        <ul>
+          <li><strong>macOS and Linux</strong>: the agent in <code>SSH_AUTH_SOCK</code>. Add a key with <code>ssh-add ~/.ssh/id_ed25519</code>.</li>
+          <li><strong>Windows</strong>: the built-in OpenSSH agent. Start the “OpenSSH Authentication Agent” service, then run <code>ssh-add</code>. To use Pageant instead, set the agent path to <code>pageant</code> in <a href="#settings">Settings</a>.</li>
+        </ul>
+        <p>Tick <strong>Forward the agent</strong> if you need your keys on the server, for example to <code>git pull</code> from a private repository. Only forward to servers you trust.</p>
+
+        <h3>2FA and prompts</h3>
+        <p>For servers that ask questions during sign-in, such as a password followed by a one-time code. Hostdeck shows each question as the server asks it. Password servers that use this style of prompt work with the Password method too; Hostdeck answers the password question for you.</p>
+
+        <h2 id="jump">Jump hosts</h2>
+        <p>Private machines, such as a database on <code>10.0.1.20</code>, are often reachable only through a bastion server. Save the bastion as its own server, then on the private server open <strong>More options</strong> and pick the bastion as <strong>Jump host</strong>. Hostdeck connects to the bastion first and tunnels through it, like OpenSSH's <code>ProxyJump</code>. The bastion can have its own jump host, up to five hops.</p>
+
+        <h2 id="host-keys">Host keys</h2>
+        <p>Every SSH server has a key that proves it is the machine you think it is. The first time you connect, Hostdeck shows its fingerprint:</p>
+        <ul>
+          <li><strong>Trust and connect</strong> remembers the key.</li>
+          <li><strong>Connect once</strong> connects without remembering, so you will be asked again next time.</li>
+          <li><strong>Cancel</strong> stops the connection.</li>
+        </ul>
+        <p>To check the fingerprint, run this on the server, or look at your cloud provider's console output:</p>
+<pre>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</pre>
+        <div class="callout warn"><p>If a server's key changes, Hostdeck stops and shows both fingerprints. That is expected after reinstalling a server or reusing an IP address for a new machine. If you did not expect it, cancel: someone could be intercepting the connection.</p></div>
+        <p>Trusted keys are listed in <a href="#settings">Settings</a>, where you can forget one.</p>
+
+        <h2 id="import">Import from SSH config</h2>
+        <p>If you already use <code>ssh</code> in a terminal, choose <strong>Import from SSH config</strong> at the bottom of the server list. Hostdeck reads <code>~/.ssh/config</code>, lists every host, and marks ones you have already added. It picks up <code>HostName</code>, <code>User</code>, <code>Port</code>, <code>IdentityFile</code> and <code>ProxyJump</code>, following the same “first value wins” rules as OpenSSH, including defaults from <code>Host *</code>.</p>
+        <p>Hosts with a key file are set to Private key; the others use the SSH agent. <code>Match</code> blocks and <code>Include</code> lines are skipped, and only the first hop of a multi-hop <code>ProxyJump</code> is linked.</p>
+
+        <h2 id="run">Run commands</h2>
+        <p>Select a server, type a command and press <strong>Run</strong> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. Commands can span several lines and use pipes, <code>&amp;&amp;</code> and anything else your shell understands. Each result shows:</p>
+        <ul>
+          <li>the output as it arrives, with error output in red</li>
+          <li>the exit code (0 means success), how long it took and when it ran</li>
+          <li>buttons to copy the output or run the command again</li>
+        </ul>
+        <p><strong>Stop</strong> interrupts a running command. Output over 2 MB per command is cut off; redirect large output to a file instead.</p>
+
+        <h3>Keep connection open</h3>
+        <p>By default, if a server was not connected when you pressed Run, Hostdeck connects, runs the command and disconnects. Tick <strong>Keep connection open</strong> to stay connected, which makes the following commands start instantly. A connection also stays open while a terminal or file editor is open on that server. You can make this the default in Settings, and disconnect any time with the button at the top.</p>
+
+        <h3>Working folder, history and snippets</h3>
+        <ul>
+          <li><strong>Run in</strong> sets the folder the command runs in, for example <code>/srv/app</code>. Empty means your home folder (or the server's start folder).</li>
+          <li><strong>Recent commands</strong> on the right lists the last commands for this server. Click one to load it, double-click to run it. Press <kbd>↑</kbd> in an empty command box for the last one.</li>
+          <li><strong>Snippets</strong> are saved commands available on every server. Type a command, choose <strong>Save as snippet</strong> and give it a name.</li>
+        </ul>
+        <p>Commands that look destructive, such as <code>rm -rf /</code>, <code>mkfs</code>, writing to a disk device, or <code>reboot</code> and <code>shutdown</code>, ask for confirmation first. You can turn this off in Settings.</p>
+        <div class="callout"><p>Each Run starts a fresh shell, so <code>cd</code> or exported variables do not carry over to the next Run. Use <strong>Run in</strong>, chain commands with <code>&amp;&amp;</code>, or open the Terminal for a session that remembers state.</p></div>
+
+        <h2 id="terminal">Terminal</h2>
+        <p>The Terminal tab opens a full interactive shell, the same as <code>ssh user@host</code>. Use it for editors like vim and nano, <code>htop</code>, database prompts, or scripts that ask questions. It resizes with the window and keeps 5,000 lines of scrollback.</p>
+        <p>Copy with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> and paste with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> (<kbd>⌘</kbd>+<kbd>C</kbd> / <kbd>⌘</kbd>+<kbd>V</kbd> work on a Mac). Typing <code>exit</code> or choosing <strong>End session</strong> closes the shell; <strong>Start new session</strong> opens another. Switching to another server or tab keeps the terminal running in the background.</p>
+        <figure>
+          <img class="shot" src="../assets/terminal.webp" width="2560" height="1586" loading="lazy" alt="An interactive terminal session in Hostdeck">
+        </figure>
+
+        <h2 id="files">Files and editing</h2>
+        <p>The Files tab browses the server over SFTP, starting in your home folder or the server's start folder. Double-click a folder to open it, use the up arrow for the parent folder, or type a path in the bar and press Enter.</p>
+        <h3>Upload and download</h3>
+        <ul>
+          <li><strong>Upload</strong> → Upload files or Upload folder, or drag files and folders from your desktop onto the list. They go into the folder you are viewing.</li>
+          <li>To download, open a file's <strong>⋯</strong> menu (or right-click it) and choose <strong>Download</strong>. Folders download with everything inside.</li>
+          <li>A progress bar at the bottom shows large transfers.</li>
+        </ul>
+        <h3>Edit a file</h3>
+        <p>Double-click a text file to open it in the editor. It highlights shell scripts, YAML, JSON, nginx configs, <code>.env</code> files, Dockerfiles, Python, JavaScript, SQL and more. Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to save and <kbd>Ctrl</kbd>+<kbd>F</kbd> to search.</p>
+        <ul>
+          <li>Saving writes to a temporary file and swaps it into place, so a dropped connection never leaves a half-written file. This works on OpenSSH servers, which is nearly all of them; on others Hostdeck writes the file directly. The file keeps its permissions.</li>
+          <li>If the file changed on the server after you opened it, Hostdeck asks before overwriting the other change.</li>
+          <li>Files up to 5 MB open in the editor. Larger files and binary files can be downloaded instead.</li>
+          <li><strong>New → New file</strong> creates an empty file and opens it.</li>
+        </ul>
+        <div class="callout"><p>The editor saves as the user you signed in as. Files owned by root, such as most of <code>/etc</code>, cannot be saved unless you sign in as root. Use the Terminal with <code>sudo nano</code> or <code>sudoedit</code> for those.</p></div>
+        <h3>Other actions</h3>
+        <p>The <strong>⋯</strong> menu on each item also has Rename (type a full path to move it), Permissions (an octal mode like <code>644</code> or <code>755</code>), Copy path and Delete. Deleting a folder removes everything in it and cannot be undone.</p>
+        <figure>
+          <img class="shot" src="../assets/editor.webp" width="2560" height="1586" loading="lazy" alt="Editing docker-compose.yml with YAML highlighting">
+        </figure>
+
+        <h2 id="shortcuts">Keyboard shortcuts</h2>
+        <p>On a Mac, use <kbd>⌘</kbd> wherever this table says <kbd>Ctrl</kbd>.</p>
+        <table>
+          <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Add a server</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Find a server</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td>Run, Terminal, Files tab</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Run the command</td></tr>
+            <tr><td><kbd>↑</kbd> in an empty command box</td><td>Load the last command</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save the file in the editor</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Search in the editor</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> / <kbd>V</kbd></td><td>Copy / paste in the terminal</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Settings</td></tr>
+            <tr><td>Double-click a server</td><td>Connect</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close a dialog or menu</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="data">Your data and security</h2>
+        <p>Hostdeck has no account and no server of its own. It connects only to the machines you add and sends nothing anywhere else: no analytics, no crash reports, no update checks.</p>
+        <p>Your servers, snippets, command history, trusted host keys and settings are stored in one file, readable only by your user:</p>
+        <table>
+          <tbody>
+            <tr><td>Linux</td><td><code>~/.config/Hostdeck/hostdeck.json</code></td></tr>
+            <tr><td>macOS</td><td><code>~/Library/Application Support/Hostdeck/hostdeck.json</code></td></tr>
+            <tr><td>Windows</td><td><code>%APPDATA%\Hostdeck\hostdeck.json</code></td></tr>
+          </tbody>
+        </table>
+        <p>Settings → <strong>Show data folder</strong> opens it.</p>
+        <h3>How secrets are protected</h3>
+        <p>Saved passwords, pasted private keys and passphrases are encrypted before they are written, using the macOS Keychain, Windows DPAPI, or the Linux secret service (GNOME Keyring or KWallet). Key files you choose with Browse are never copied; only their path is saved. Settings shows which secret storage is in use.</p>
+        <div class="callout warn"><p>On Linux without a keyring, saved passwords can only be lightly obscured, and Hostdeck warns you in the server form. On those systems, prefer an SSH key, the SSH agent, or “Ask for the password every time”.</p></div>
+        <h3>Moving to another computer</h3>
+        <p>Settings → <strong>Export servers</strong> saves your servers and snippets to a JSON file. Passwords and keys are never included. On the other computer, use <strong>Import servers</strong>, then re-enter passwords or point to your key files.</p>
+        <h3>Inside the app</h3>
+        <p>For those curious: the window runs with Electron's context isolation and sandbox, a strict content security policy and no navigation away from the app. All SSH work happens in the main process using the <a href="https://github.com/mscdex/ssh2">ssh2</a> library, and the window can only reach it through a short list of actions.</p>
+
+        <h2 id="settings">Settings</h2>
+        <p>Open Settings with the gear at the bottom of the server list or <kbd>Ctrl</kbd>+<kbd>,</kbd>.</p>
+        <ul>
+          <li><strong>Theme</strong>: match the system, dark or light.</li>
+          <li><strong>Keep connections open after running a command</strong>: the default for the Run tab's checkbox.</li>
+          <li><strong>Ask before running commands that look destructive</strong>: on by default.</li>
+          <li><strong>SSH agent path</strong>: a custom agent socket, a Windows named pipe, or <code>pageant</code>.</li>
+          <li><strong>Trusted host keys</strong>: every remembered fingerprint, with Forget.</li>
+          <li><strong>Your data</strong>: where the file is, which secret storage is used, and export or import of servers.</li>
+        </ul>
+
+        <h2 id="troubleshooting">Troubleshooting</h2>
+        <h3>“Authentication failed”</h3>
+        <ul>
+          <li>Check the username. Cloud images use <code>ubuntu</code> (Ubuntu), <code>ec2-user</code> (Amazon Linux), <code>admin</code> or <code>debian</code> (Debian), or <code>root</code> (many Scaleway images).</li>
+          <li>For a key, make sure it is the one the server knows, for example the key pair chosen when the EC2 instance was created.</li>
+          <li>Many servers disable password sign-in. If <code>ssh</code> in a terminal only works with a key, use a key here too.</li>
+        </ul>
+        <h3>“Connection refused” or “Timed out”</h3>
+        <p>The server is not listening on that port, or a firewall blocks you. Check the port, and that the server's firewall or cloud security group (AWS security groups, Scaleway security groups) allows SSH from your IP address. Hostdeck gives up after 20 seconds without an answer; time spent answering prompts does not count.</p>
+        <h3>“No matching algorithm” or handshake failed</h3>
+        <p>The server only supports old algorithms. Edit the server, open More options and tick <strong>Allow legacy algorithms</strong>.</p>
+        <h3>“No SSH agent found”</h3>
+        <p>Start your agent and add a key. On Linux and macOS: <code>eval "$(ssh-agent)"</code> then <code>ssh-add</code>. On Windows, start the “OpenSSH Authentication Agent” service in Services, or set the agent path to <code>pageant</code> if you use Pageant.</p>
+        <h3>The host key changed</h3>
+        <p>See <a href="#host-keys">Host keys</a>. If you rebuilt the server, choose <strong>Trust new key</strong>.</p>
+        <h3>Cannot save a file</h3>
+        <p>You are probably editing a file your user cannot write, such as one in <code>/etc</code>. Use the Terminal with <code>sudo</code>, or adjust the file's owner or permissions.</p>
+        <h3>Still stuck?</h3>
+        <p>Open an issue on <a href="https://github.com/ramiatoui/hostdeck/issues">GitHub</a> with your operating system, the Hostdeck version (shown in Settings) and the exact error message. Never paste passwords or private keys.</p>
+
+        <h2 id="source">Build from source</h2>
+        <p>You need Node.js 20 or later.</p>
+<pre>git clone https://github.com/ramiatoui/hostdeck.git
+cd hostdeck
+npm install
+npm start          # run the app
+npm test           # run the tests against a built-in SSH test server
+npm run dist:linux # or dist:win, dist:mac</pre>
+        <p>Installers are written to <code>release/</code>. Pushing a tag such as <code>v0.1.0</code> builds Linux, Windows and macOS installers on GitHub Actions and attaches them to a release.</p>
+      </article>
+    </div>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <span>Hostdeck by <a href="https://ramiatoui.com">Rami Atoui</a>. MIT licensed.</span>
+      <span><a href="../">Home</a> · <a href="https://github.com/ramiatoui/hostdeck">Source code</a> · <a href="https://github.com/ramiatoui/hostdeck/issues">Report a problem</a></span>
+    </div>
+  </footer>
+  <script>
+    // Highlight the section being read in the table of contents.
+    (function () {
+      const links = [...document.querySelectorAll('.toc a')];
+      const map = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+      const obs = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          links.forEach((a) => a.classList.remove('on'));
+          const a = map.get(e.target.id);
+          if (a) a.classList.add('on');
+        }
+      }, { rootMargin: '0px 0px -70% 0px' });
+      document.querySelectorAll('.doc h2[id]').forEach((h) => obs.observe(h));
+    })();
+  </script>
+</body>
+</html>

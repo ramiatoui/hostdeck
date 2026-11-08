@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hostdeck · SSH server manager for Linux, Windows and macOS</title>
+  <meta name="description" content="Hostdeck is a free desktop SSH manager. Save your servers, run commands, open a terminal, and upload or edit files over SFTP. Everything stays on your computer.">
+  <meta property="og:title" content="Hostdeck">
+  <meta property="og:description" content="Save your servers. Pick one. Run. A local-first SSH manager for Linux, Windows and macOS.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://ramiatoui.com/hostdeck/assets/run.webp">
+  <meta name="theme-color" content="#121822">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="preload" href="assets/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="wrap">
+    <header class="top">
+      <a class="logo" href="./"><img src="assets/icon.png" alt="" width="30" height="30">Hostdeck</a>
+      <nav aria-label="Main">
+        <a href="#features" class="hide-sm">Features</a>
+        <a href="docs/">Docs</a>
+        <a href="https://github.com/ramiatoui/hostdeck" class="hide-sm">GitHub</a>
+        <a class="btn small primary" href="#download">Download</a>
+      </nav>
+    </header>
+  </div>
+
+  <main id="main">
+    <div class="wrap hero">
+      <h1>Save your servers. Pick one. Run.</h1>
+      <p class="lede">Hostdeck is a desktop SSH manager for Linux, Windows and macOS. Keep every server you reach over SSH in one list, then run commands, open a terminal, and upload or edit files. Your connections and keys never leave your computer.</p>
+      <div class="cta">
+        <a class="btn primary" id="cta-download" href="#download">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>
+          <span>Download Hostdeck</span>
+        </a>
+        <a class="btn" href="docs/">Read the docs</a>
+        <span class="note">Free and open source. No account.</span>
+      </div>
+
+      <div class="demo" aria-label="Try it: pick a server and run a command">
+        <div class="demo-deck" role="group" aria-label="Servers">
+          <div class="label">Your servers</div>
+          <button class="demo-host" type="button" data-host="web" aria-pressed="true" style="--c:#6fcf97"><b>web-1</b><span>ubuntu@51.15.204.18</span></button>
+          <button class="demo-host" type="button" data-host="api" aria-pressed="false" style="--c:#8fb4ff"><b>api (EC2)</b><span>ec2-user@3.120.45.10</span></button>
+          <button class="demo-host" type="button" data-host="db" aria-pressed="false" style="--c:#e3a8f0"><b>postgres</b><span>via bastion</span></button>
+        </div>
+        <div class="demo-main">
+          <div class="demo-title">
+            <div><b id="demo-name">web-1</b> <span id="demo-addr">ubuntu@51.15.204.18</span></div>
+            <span class="demo-status" id="demo-status">Not connected</span>
+          </div>
+          <form class="demo-form" id="demo-form">
+            <label for="demo-cmd">$</label>
+            <input id="demo-cmd" autocomplete="off" spellcheck="false" value="df -h /">
+            <button type="submit" id="demo-run">Run</button>
+          </form>
+          <pre class="demo-out" id="demo-out" aria-live="polite"><span class="dim">Press Run to see what happens.</span></pre>
+          <p class="demo-hint">A demo in your browser. The app connects to your real servers.</p>
+        </div>
+      </div>
+    </div>
+
+    <section class="wrap" aria-labelledby="how">
+      <div class="section-head">
+        <h2 id="how">How it works</h2>
+      </div>
+      <ol class="steps">
+        <li><h3>Save a server</h3><p>Name, address, username and how you sign in. Or import everything from your <code>~/.ssh/config</code> in one go.</p></li>
+        <li><h3>Pick it and type</h3><p>Select the server, write a command. Your recent commands and saved snippets are one click away.</p></li>
+        <li><h3>Run</h3><p>Hostdeck connects, runs it and shows the output with the exit code. Keep the connection open for the next one, or let it close.</p></li>
+      </ol>
+    </section>
+
+    <section class="wrap" id="features" aria-labelledby="features-title">
+      <div class="section-head">
+        <h2 id="features-title">One window for the work you do over SSH</h2>
+        <p>Three tabs per server. Use whichever fits the job.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Run commands and read the result</h3>
+          <p>Each run gets its own block with live output, errors in red, the exit code and how long it took. Run it again or copy the output with one click.</p>
+          <ul>
+            <li>Choose the folder a command runs in</li>
+            <li>History and snippets per server</li>
+            <li>Asks before anything like <code>rm -rf /</code> or <code>reboot</code></li>
+          </ul>
+        </div>
+        <img class="shot" src="assets/run.webp" width="2560" height="1586" loading="lazy" alt="Hostdeck Run tab showing three command results with exit codes, a server list on the left and recent commands on the right">
+      </div>
+
+      <div class="feature flip">
+        <div class="feature-text">
+          <h3>A real terminal for longer sessions</h3>
+          <p>Open a full interactive shell when you need vim, htop, a database prompt or a deploy that asks questions. The connection stays up while it is open.</p>
+        </div>
+        <img class="shot" src="assets/terminal.webp" width="2560" height="1586" loading="lazy" alt="Hostdeck Terminal tab with an interactive shell showing ls and top output">
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Upload, download and edit files</h3>
+          <p>Browse the server, drag files in from your desktop, and edit configs with syntax highlighting. If someone else changed a file since you opened it, Hostdeck tells you before you overwrite their work.</p>
+          <ul>
+            <li>Folders upload and download with progress</li>
+            <li>Rename, change permissions, delete</li>
+            <li>On OpenSSH servers, saves are atomic: a dropped connection never leaves half a file</li>
+          </ul>
+        </div>
+        <img class="shot" src="assets/editor.webp" width="2560" height="1586" loading="lazy" alt="Hostdeck editing docker-compose.yml on a server with YAML syntax highlighting">
+      </div>
+    </section>
+
+    <section class="wrap" aria-labelledby="logins">
+      <div class="section-head">
+        <h2 id="logins">Works with how your servers let you in</h2>
+        <p>Ubuntu on Scaleway, Amazon Linux on EC2, a Raspberry Pi at home, an old router. If it speaks SSH, Hostdeck can reach it.</p>
+      </div>
+      <dl class="logins">
+        <div><dt>Password</dt><dd>Saved encrypted in your system keychain, or asked for every time.</dd></div>
+        <div><dt>Private key</dt><dd>Point to a key file such as an EC2 <code>.pem</code>, or paste one. Passphrases supported.</dd></div>
+        <div><dt>SSH agent</dt><dd>Uses ssh-agent, the Windows OpenSSH agent or Pageant, with optional agent forwarding.</dd></div>
+        <div><dt>Two-factor login</dt><dd>Keyboard-interactive prompts, such as a one-time code, are shown as you connect.</dd></div>
+        <div><dt>Jump hosts</dt><dd>Reach private machines through a bastion, up to five hops deep.</dd></div>
+        <div><dt>Old devices</dt><dd>Turn on legacy algorithms for older servers and network gear, per server.</dd></div>
+      </dl>
+    </section>
+
+    <section class="wrap" aria-labelledby="local">
+      <div class="local">
+        <div>
+          <h2 id="local">Nothing leaves your computer</h2>
+          <p>There is no Hostdeck account and no Hostdeck server. The app talks only to the machines you add, and it stores everything in one file in your user folder.</p>
+        </div>
+        <ul>
+          <li><b>Secrets in your keychain</b><span>Passwords and pasted keys are encrypted with the macOS Keychain, Windows DPAPI or the Linux secret service.</span></li>
+          <li><b>Host keys checked</b><span>You confirm a server's fingerprint the first time. If it ever changes, Hostdeck stops and asks.</span></li>
+          <li><b>No telemetry</b><span>No analytics, no update pings, no crash uploads.</span></li>
+          <li><b>Exports without secrets</b><span>Move your server list to another computer; passwords and keys stay behind.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="wrap" id="download" aria-labelledby="dl-title">
+      <div class="section-head">
+        <h2 id="dl-title">Download</h2>
+        <p>Version 0.1. Installers are built from the public source code on GitHub.</p>
+      </div>
+      <div class="downloads">
+        <div class="dl" data-os="linux">
+          <h3>Linux</h3>
+          <p>AppImage runs on most distributions. The .deb package suits Ubuntu and Debian.</p>
+          <div class="files">.AppImage · .deb · x64 and arm64</div>
+          <a class="btn" href="https://github.com/ramiatoui/hostdeck/releases/latest">Download for Linux</a>
+        </div>
+        <div class="dl" data-os="windows">
+          <h3>Windows</h3>
+          <p>Installer for Windows 10 and 11, or a portable .exe that runs without installing.</p>
+          <div class="files">.exe installer · portable .exe</div>
+          <a class="btn" href="https://github.com/ramiatoui/hostdeck/releases/latest">Download for Windows</a>
+        </div>
+        <div class="dl" data-os="mac">
+          <h3>macOS</h3>
+          <p>One app for Apple silicon and Intel Macs, macOS 12 or later.</p>
+          <div class="files">.dmg · .zip · universal</div>
+          <a class="btn" href="https://github.com/ramiatoui/hostdeck/releases/latest">Download for macOS</a>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:20px;font-size:15px">First launch on macOS or Windows may show a warning because the app is not code-signed yet. The <a href="docs/#install">install guide</a> explains how to open it.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>Hostdeck by <a href="https://ramiatoui.com">Rami Atoui</a>. MIT licensed.</span>
+      <span><a href="docs/">Documentation</a> · <a href="https://github.com/ramiatoui/hostdeck">Source code</a> · <a href="https://github.com/ramiatoui/hostdeck/issues">Report a problem</a></span>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>
