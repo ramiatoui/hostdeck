@@ -111,7 +111,9 @@ function startServer({ root, user, hostKey, port = 0 }) {
           const stream = accept();
           // Use a real pseudo-terminal (via util-linux "script") when available,
           // so input echo and Enter behave like a real SSH server.
-          const usePty = (process.env.PATH || '').split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, 'script')));
+          // util-linux "script" only; the BSD version on macOS takes different arguments.
+          const usePty = process.platform === 'linux'
+            && (process.env.PATH || '').split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, 'script')));
           const child = usePty
             ? spawn('script', ['-qfc', 'sh -i', '/dev/null'], { cwd: path.join(root, 'home'), env: { ...process.env, TERM: 'xterm-256color', PS1: '$ ' } })
             : spawn('sh', [], { cwd: path.join(root, 'home') });

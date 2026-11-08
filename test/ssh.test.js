@@ -46,9 +46,13 @@ test('password login, host key trust on first use, commands, cwd and exit codes'
   assert.equal(res.code, 3);
 
   const out2 = collect(ssh, 'r2');
-  await ssh.exec(s.id, 'pwd', { runId: 'r2', cwd: '/tmp' });
-  assert.equal(out2.stdout.trim(), fs.realpathSync('/tmp'));
-  assert.deepEqual(store.getHistory(s.id).slice(0, 2), ['pwd', 'echo hello; echo oops 1>&2; exit 3']);
+  // Run in a folder; on Windows the test server's shell uses its own path style.
+  const workDir = tempDir();
+  const shellDir = process.platform === 'win32' ? '/' : workDir;
+  await ssh.exec(s.id, 'pwd -P', { runId: 'r2', cwd: shellDir });
+  if (process.platform !== 'win32') assert.equal(out2.stdout.trim(), fs.realpathSync(workDir));
+  else assert.equal(out2.stdout.trim(), '/');
+  assert.deepEqual(store.getHistory(s.id).slice(0, 2), ['pwd -P', 'echo hello; echo oops 1>&2; exit 3']);
 
   // Reconnecting a known host does not prompt again.
   ssh.disconnect(s.id);
@@ -234,7 +238,10 @@ test('SFTP: browse, edit with conflict check, upload, download, rename, delete',
   await ssh.rename(s.id, '/home/new.conf', '/home/backup/new.conf');
   assert.ok(fs.existsSync(path.join(root, 'home', 'backup', 'new.conf')));
   await ssh.chmod(s.id, '/home/backup/new.conf', '600');
-  assert.equal(fs.statSync(path.join(root, 'home', 'backup', 'new.conf')).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    // Windows has no Unix permission bits.
+    assert.equal(fs.statSync(path.join(root, 'home', 'backup', 'new.conf')).mode & 0o777, 0o600);
+  }
 
   await ssh.remove(s.id, '/home/site');
   assert.ok(!fs.existsSync(path.join(root, 'home', 'site')));
