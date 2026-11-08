@@ -26,7 +26,7 @@
     "build:renderer": "node scripts/build-renderer.js",
     "watch:renderer": "node scripts/build-renderer.js --watch",
     "start": "npm run build:renderer && electron .",
-    "test": "node --test test/",
+    "test": "node --test --test-timeout=30000 test/*.test.js",
     "dist": "npm run build:renderer && electron-builder",
     "dist:linux": "npm run build:renderer && electron-builder --linux",
     "dist:win": "npm run build:renderer && electron-builder --win",
