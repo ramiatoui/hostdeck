@@ -115,7 +115,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-${version}-win-setup.${ext}"
     },
     "mac": {
       "target": [
@@ -139,7 +140,10 @@
       "owner": "ramiatoui",
       "repo": "hostdeck"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "portable": {
+      "artifactName": "${productName}-${version}-win-portable.${ext}"
+    }
   },
   "desktopName": "hostdeck.desktop"
 }
