@@ -2,10 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { utils } = require('ssh2');
 const { SshManager } = require('../src/main/ssh');
 const { startServer } = require('./helpers/fake-server');
-const { makeStore, tempDir } = require('./helpers/env');
+const { makeStore, tempDir, generateKeys } = require('./helpers/env');
 
 function setup({ user, answers = {} } = {}) {
   const { store } = makeStore();
@@ -111,7 +110,7 @@ test('keyboard-interactive login with a one-time code (2FA)', async (t) => {
 });
 
 test('private key login with a passphrase prompt', async (t) => {
-  const keys = utils.generateKeyPairSync('ed25519', { passphrase: 'open sesame', cipher: 'aes256-ctr', rounds: 4 });
+  const keys = generateKeys({ passphrase: 'open sesame', cipher: 'aes256-ctr', rounds: 4 });
   const srv = await startServer({ root: tempDir(), user: { username: 'u', publicKey: keys.public } });
   t.after(() => srv.close());
   const keyFile = path.join(tempDir(), 'id_ed25519');
@@ -126,7 +125,7 @@ test('private key login with a passphrase prompt', async (t) => {
 });
 
 test('pasted private key without passphrase', async (t) => {
-  const keys = utils.generateKeyPairSync('ed25519');
+  const keys = generateKeys();
   const srv = await startServer({ root: tempDir(), user: { username: 'u', publicKey: keys.public } });
   t.after(() => srv.close());
   const { store, ssh } = setup({ answers: { hostkey: 'once' } });

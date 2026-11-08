@@ -28,7 +28,7 @@ function attrsOf(st) {
  * @param {string} [opts.hostKey] PEM/OpenSSH private host key
  */
 function startServer({ root, user, hostKey, port = 0 }) {
-  const key = hostKey || utils.generateKeyPairSync('ed25519').private;
+  const key = hostKey || require('./env').generateKeys().private;
   const allowedKey = user.publicKey ? utils.parseKey(user.publicKey) : null;
   fs.mkdirSync(path.join(root, 'home'), { recursive: true });
 
