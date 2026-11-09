@@ -526,7 +526,9 @@ function renderHeader() {
   el.textContent = '';
   el.append(
     h('div', { class: 'host-title' },
-      h('h1', null, s.name),
+      h('div', { class: 'title-row' },
+        h('h1', null, s.name),
+        s.group ? h('span', { class: 'group-chip', title: `Group: ${s.group}` }, s.group) : null),
       h('div', { class: 'addr' }, `${s.username}@${s.host}:${s.port}`, jump ? h('span', { class: 'muted' }, `  via ${jump.name}`) : null)),
     h('div', { class: 'host-actions' },
       h('span', { class: `state-pill ${st}`, title: msg || '' }, h('span', { class: 'dot' }),

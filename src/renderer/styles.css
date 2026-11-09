@@ -165,7 +165,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   display: flex; align-items: center; gap: 16px; padding: 14px 22px 0;
 }
 .host-title { min-width: 0; flex: 1; }
-.host-title h1 { margin: 0; font-size: 19px; font-weight: 600; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host-title .title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.group-chip {
+  flex: none; max-width: 220px; padding: 2px 10px; border-radius: 11px;
+  background: var(--raised); border: 1px solid var(--line); color: var(--muted);
+  font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.host-title h1 { min-width: 0; margin: 0; font-size: 19px; font-weight: 600; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .host-title .addr { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
 .host-actions { display: flex; align-items: center; gap: 8px; }
 .state-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin-right: 6px; }
