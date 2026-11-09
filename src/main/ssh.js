@@ -8,6 +8,8 @@ const path = require('path');
 const posix = path.posix;
 const { Client, utils } = require('ssh2');
 const { expandHome } = require('./sshconfig');
+const { startSocksServer } = require('./socks');
+const { parseListeningPorts, LIST_PORTS_COMMAND } = require('./ports');
 
 const MAX_EDIT_BYTES = 5 * 1024 * 1024;
 const MAX_JUMP_DEPTH = 5;
@@ -117,6 +119,7 @@ class SshManager extends EventEmitter {
     this.conns = new Map(); // serverId -> { client, jumps: Client[], sftp, pending }
     this.runs = new Map(); // runId -> stream
     this.shells = new Map(); // shellId -> { stream, serverId }
+    this.proxies = new Map(); // serverId -> Promise<{ port, close }>
   }
 
   // ---- connection --------------------------------------------------------
@@ -173,6 +176,7 @@ class SshManager extends EventEmitter {
       }
     }
     this.conns.delete(serverId);
+    this.stopProxy(serverId);
     this.emit('status', { serverId, state: 'disconnected' });
   }
 
@@ -182,6 +186,7 @@ class SshManager extends EventEmitter {
     if (entry.client) entry.client.end();
     for (const j of entry.jumps) j.end();
     this.conns.delete(serverId);
+    this.stopProxy(serverId);
     this.emit('status', { serverId, state: 'disconnected' });
   }
 
@@ -386,6 +391,87 @@ class SshManager extends EventEmitter {
     const entry = this.conns.get(serverId);
     if (!entry || !entry.ready) throw new SshError('NOT_CONNECTED', 'Not connected to this server.');
     return entry.client;
+  }
+
+  // ---- browser tunnel ----------------------------------------------------
+
+  /**
+   * Start (or reuse) a local SOCKS5 proxy on 127.0.0.1 whose connections are
+   * opened from the server's side of the SSH connection. It stops when the
+   * server disconnects. Resolves with the local port.
+   */
+  async startProxy(serverId) {
+    this._client(serverId);
+    if (!this.proxies.has(serverId)) {
+      const p = startSocksServer(
+        (host, port, srcPort) => this.forward(serverId, host, port, srcPort),
+        { onError: (err, host, port) => this.emit('tunnel:error', { serverId, host, port, message: err.message }) },
+      );
+      this.proxies.set(serverId, p);
+      p.catch(() => this.proxies.delete(serverId));
+    }
+    return (await this.proxies.get(serverId)).port;
+  }
+
+  stopProxy(serverId) {
+    const p = this.proxies.get(serverId);
+    if (!p) return;
+    this.proxies.delete(serverId);
+    p.then((proxy) => proxy.close(), () => {});
+  }
+
+  /** Open a TCP connection to host:port from the server (direct-tcpip). */
+  forward(serverId, host, port, srcPort = 0) {
+    return new Promise((resolve, reject) => {
+      let client;
+      try {
+        client = this._client(serverId);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      client.forwardOut('127.0.0.1', srcPort, host, port, (err, stream) => {
+        if (err) {
+          // RFC 4254 reasons: 1 prohibited, 2 connect failed, 4 resource shortage.
+          const detail = err.message.replace(/^\(SSH\) Channel open failure:\s*/, '');
+          let why;
+          if (err.reason === 1 || /prohibited/i.test(detail)) {
+            why = 'The server does not allow port forwarding. Set AllowTcpForwarding yes in /etc/ssh/sshd_config and restart sshd.';
+          } else if (/not known|resolve|no address|nodename/i.test(detail)) {
+            why = `The server could not find the address ${host}.`;
+          } else if (err.reason === 2 || /refused|connect failed/i.test(detail)) {
+            why = `Nothing is listening on ${host}:${port} as seen from the server. Check that the service is running and the port is right.`;
+          } else if (err.reason === 4) {
+            why = 'The server has too many open connections. Try again in a moment.';
+          } else {
+            why = detail || err.message;
+          }
+          reject(new SshError('FORWARD_FAILED', why));
+        } else {
+          resolve(stream);
+        }
+      });
+    });
+  }
+
+  /** Listening TCP ports on the server, likely web interfaces first. */
+  async listeningPorts(serverId) {
+    const out = await this.capture(serverId, LIST_PORTS_COMMAND);
+    return parseListeningPorts(out);
+  }
+
+  /** Run a command and return its stdout, without adding it to history. */
+  capture(serverId, command) {
+    const client = this._client(serverId);
+    return new Promise((resolve, reject) => {
+      client.exec(command, (err, stream) => {
+        if (err) return reject(friendlyError(err));
+        const chunks = [];
+        stream.on('data', (d) => chunks.push(d));
+        stream.stderr.on('data', () => {});
+        stream.on('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      });
+    });
   }
 
   // ---- commands ----------------------------------------------------------

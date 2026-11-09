@@ -68,6 +68,9 @@ const ICONS = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  forward: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
   more: '<circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/>',
   upload: '<path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -417,6 +420,7 @@ async function deleteServer(s) {
   try {
     const v = state.views[s.id];
     if (v && v.shell) { v.shell.term.dispose(); }
+    if (v && v.browser && v.browser.wrap) v.browser.wrap.remove();
     delete state.views[s.id];
     await api.call('servers:delete', s.id);
     if (state.selected === s.id) state.selected = null;
@@ -464,7 +468,10 @@ api.on('status', ({ serverId, state: st, message }) => {
     renderHeader();
     if (v && v.tab === 'terminal' && st === 'disconnected') renderPane();
     if (v && v.tab === 'files' && (st === 'connected' || st === 'disconnected') && !v.editor) renderPane();
+    if (v && v.tab === 'browser' && (st === 'connected' || st === 'disconnected')) renderPane();
   }
+  // A new connection gets a new tunnel; point the server's browser at it.
+  if (st === 'connected' && v && v.browser && v.browser.wv) api.call('browser:open', serverId).catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -485,16 +492,17 @@ function renderMain() {
             h('button', { class: 'btn primary', onclick: () => editServer() }, 'Add server'),
             h('button', { class: 'btn', onclick: importSshConfig }, 'Import from SSH config')),
         ])));
+    placeBrowsers();
     return;
   }
   const v = view(s.id);
   main.append(
     h('header', { class: 'host-head', id: 'host-head' }),
     h('div', { class: 'tabs', role: 'tablist' },
-      ['run', 'terminal', 'files'].map((t, i) => h('button', {
+      ['run', 'terminal', 'files', 'browser'].map((t, i) => h('button', {
         class: 'tab', role: 'tab', 'aria-selected': String(v.tab === t),
         onclick: () => setTab(t),
-      }, { run: 'Run', terminal: 'Terminal', files: 'Files' }[t], h('kbd', null, `${MOD}${isMac ? '' : '+'}${i + 1}`)))),
+      }, { run: 'Run', terminal: 'Terminal', files: 'Files', browser: 'Browser' }[t], h('kbd', null, `${MOD}${isMac ? '' : '+'}${i + 1}`)))),
     h('section', { class: 'pane', id: 'pane' }),
   );
   renderHeader();
@@ -537,7 +545,9 @@ function renderPane() {
   const v = view(state.selected);
   if (v.tab === 'run') renderRun(pane);
   else if (v.tab === 'terminal') renderTerminal(pane);
-  else renderFiles(pane);
+  else if (v.tab === 'files') renderFiles(pane);
+  else renderBrowser(pane);
+  placeBrowsers();
 }
 
 // ---------------------------------------------------------------------------
@@ -683,7 +693,7 @@ async function runCommand(preset) {
     run.error = err.code === 'CANCELLED' ? 'Connection cancelled' : err.message;
     updateRunFoot(run);
   } finally {
-    const busy = v.runs.some((r) => r.running) || v.shell || v.editor;
+    const busy = v.runs.some((r) => r.running) || v.shell || v.editor || (v.browser && v.browser.wv && !v.browser.start);
     if (!wasConnected && !v.keepOpen && !busy && statusOf(id) === 'connected') await disconnect(id);
     if (state.selected === id && v.tab === 'run') {
       const btn = document.getElementById('run-btn');
@@ -810,6 +820,322 @@ api.on('shell:exit', ({ shellId }) => {
   v.shell.exited = true;
   v.shell.term.write('\r\n\x1b[2m[session ended]\x1b[0m\r\n');
   if (state.views[state.selected] === v && v.tab === 'terminal') renderPane();
+});
+
+// ---------------------------------------------------------------------------
+// Browser tab: web pages loaded through the server's SSH connection.
+// Each server's <webview> lives in #browser-layer (outside the re-rendered
+// pane, so pages survive tab switches) and is positioned over the pane's slot.
+
+const browsersByServer = () => Object.entries(state.views).filter(([, v]) => v.browser);
+const TUNNEL_ERROR_WINDOW = 4000;
+
+function normalizeAddress(input) {
+  let text = String(input || '').trim();
+  if (!text) return null;
+  if (/^\d{1,5}$/.test(text)) text = `localhost:${text}`;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
+    const port = (text.match(/^[^/]*:(\d+)/) || [])[1];
+    text = `${['443', '8443', '9443'].includes(port) ? 'https' : 'http'}://${text}`;
+  }
+  try {
+    const u = new URL(text);
+    if (!/^https?:$/.test(u.protocol)) return null;
+    return u.href;
+  } catch (_) {
+    return null;
+  }
+}
+
+function browserState(id) {
+  const v = view(id);
+  if (!v.browser) {
+    v.browser = { wrap: null, wv: null, partition: null, url: '', title: '', loading: false, ready: false, error: null, cert: null, tunnelError: null, ports: null, portsError: null, start: true, address: '' };
+  }
+  return v.browser;
+}
+
+function renderBrowser(pane) {
+  const id = state.selected;
+  const s = serverById(id);
+  const b = browserState(id);
+  const st = statusOf(id);
+
+  const address = h('input', {
+    class: 'address', id: 'address', type: 'text', spellcheck: false, autocomplete: 'off',
+    value: b.start ? b.address : b.url, placeholder: 'localhost:8080', 'aria-label': 'Address',
+    onkeydown: (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); goTo(id, address.value); }
+      if (e.key === 'Escape') { address.value = b.start ? b.address : b.url; address.blur(); }
+    },
+    oninput: () => { if (b.start) b.address = address.value; },
+    onfocus: () => address.select(),
+  });
+  const can = (fn) => Boolean(b.wv && b.ready && !b.start && b.wv[fn]());
+  const toolbar = h('div', { class: 'browser-bar' },
+    h('button', { class: 'icon-btn', title: 'Back (Alt+←)', 'aria-label': 'Back', disabled: !can('canGoBack'), onclick: () => b.wv.goBack() }, icon(ICONS.back)),
+    h('button', { class: 'icon-btn', title: 'Forward (Alt+→)', 'aria-label': 'Forward', disabled: !can('canGoForward'), onclick: () => b.wv.goForward() }, icon(ICONS.forward)),
+    b.loading
+      ? h('button', { class: 'icon-btn', title: 'Stop', 'aria-label': 'Stop', onclick: () => b.wv.stop() }, icon(ICONS.close))
+      : h('button', { class: 'icon-btn', title: `Reload (${MOD}+R)`, 'aria-label': 'Reload', disabled: b.start || !b.wv, onclick: () => reloadBrowser(id) }, icon(ICONS.refresh)),
+    h('label', { class: 'address-box' }, h('span', { class: 'via', title: `Pages load through ${s.name}. localhost is the server.` }, `via ${s.name}`), address),
+    h('button', { class: 'icon-btn', title: 'Browser options', 'aria-label': 'Browser options', onclick: (e) => browserMenu(e.currentTarget, id) }, icon(ICONS.more)));
+  pane.append(toolbar, h('div', { class: 'browser-progress', hidden: !b.loading }));
+
+  const slot = h('div', { class: 'browser-slot', id: 'browser-slot' });
+  pane.append(slot);
+
+  if (st !== 'connected') {
+    b.overlay = true;
+    slot.append(h('div', { class: 'empty' }, h('div', { class: 'empty-inner' },
+      h('h2', null, b.wv && !b.start ? `Disconnected from ${s.name}` : 'Browse from the server'),
+      h('p', null, b.wv && !b.start
+        ? 'Pages load through the SSH connection, so the browser needs it. Reconnect to carry on where you were.'
+        : 'Open web pages as if you were on the server. localhost is the server itself, so admin tools that are not open to the internet, like phpMyAdmin or pgAdmin, work here.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn primary', disabled: st === 'connecting', onclick: () => reconnectBrowser(id) }, b.wv && !b.start ? 'Reconnect' : 'Connect')))));
+  } else if (b.start) {
+    b.overlay = true;
+    slot.append(renderStartPage(id));
+  } else if (b.cert || b.error) {
+    b.overlay = true;
+    slot.append(renderBrowserError(id));
+  } else {
+    b.overlay = false;
+  }
+  placeBrowsers();
+  if (b.start && st === 'connected') setTimeout(() => { if (document.activeElement === document.body) address.focus(); }, 0);
+}
+
+function renderStartPage(id) {
+  const s = serverById(id);
+  const b = browserState(id);
+  if (b.ports === null && !b.portsLoading) loadPorts(id);
+  const chips = b.portsLoading && !b.ports
+    ? h('p', { class: 'muted' }, 'Looking for listening ports…')
+    : b.portsError
+      ? h('p', { class: 'muted' }, 'Could not list the ports on this server. Type an address above instead.')
+      : !b.ports || !b.ports.length
+        ? h('p', { class: 'muted' }, 'No web ports found. Type an address above if you know where the service listens.')
+        : h('div', { class: 'port-list' }, b.ports.map((p) => {
+          const label = `${p.host}:${p.port}`;
+          return h('button', { class: 'port', onclick: () => goTo(id, label) },
+            h('span', { class: 'mono' }, label),
+            h('span', { class: 'muted' }, { 80: 'web server', 443: 'web server (HTTPS)', 3000: 'often Grafana or a Node app', 5050: 'often pgAdmin', 8080: 'often phpMyAdmin or an app', 8443: 'web (HTTPS)', 9000: 'often Portainer', 9090: 'often Prometheus or Cockpit' }[p.port] || ''));
+        }));
+  return h('div', { class: 'browser-start' },
+    h('h2', null, `Browse from ${s.name}`),
+    h('p', { class: 'muted' }, 'Type an address in the bar above. Pages load through the SSH connection, so localhost and private addresses are the ones the server sees.'),
+    h('div', { class: 'section-row' },
+      h('h3', null, `Listening on ${s.name}`),
+      h('button', { class: 'text-btn', onclick: () => loadPorts(id) }, 'Refresh')),
+    chips);
+}
+
+async function loadPorts(id) {
+  const b = browserState(id);
+  b.portsLoading = true;
+  try {
+    b.ports = await api.call('browser:ports', id);
+    b.portsError = null;
+  } catch (err) {
+    b.portsError = err.message;
+    b.ports = [];
+  } finally {
+    b.portsLoading = false;
+  }
+  if (state.selected === id && view(id).tab === 'browser' && b.start) renderPane();
+}
+
+function friendlyLoadError(b, err) {
+  let host = '';
+  try { host = new URL(err.url).host; } catch (_) { /* ignore */ }
+  const recent = b.tunnelError && Date.now() - b.tunnelError.at < TUNNEL_ERROR_WINDOW ? b.tunnelError.message : null;
+  if (recent) return { title: `Could not open ${host || 'the page'}`, text: recent };
+  const code = err.code;
+  if ([-102, -120, -130].includes(code)) return { title: `Nothing answered on ${host}`, text: `No service accepted the connection on ${host} from the server. Check it is running and the port is right.` };
+  if (code === -105 || code === -137) return { title: `Unknown address ${host}`, text: 'The server could not find that address. Check the spelling, or use localhost or an IP address.' };
+  if (code === -118 || code === -7) return { title: `${host} took too long`, text: 'The page did not respond in time.' };
+  if (code === -100 || code === -101) return { title: `${host} closed the connection`, text: 'The service may expect HTTPS (try https://) or plain HTTP (try http://).' };
+  if (code === -107) return { title: `${host} does not speak HTTPS here`, text: 'Try the same address with http:// instead.' };
+  return { title: `Could not open ${host || 'the page'}`, text: err.description || `Error ${code}` };
+}
+
+function renderBrowserError(id) {
+  const b = browserState(id);
+  if (b.cert) {
+    return h('div', { class: 'empty' }, h('div', { class: 'empty-inner' },
+      h('h2', null, `${b.cert.host} has an untrusted certificate`),
+      h('p', null, 'Internal tools often use a self-signed certificate. Traffic still goes through your SSH connection, but the certificate cannot prove which service you reached.'),
+      h('p', { class: 'muted mono', style: { fontSize: '12px' } }, b.cert.error),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn', onclick: () => { b.cert = null; b.error = null; if (b.wv && b.wv.canGoBack()) b.wv.goBack(); else showStart(id); } }, 'Go back'),
+        h('button', { class: 'btn primary', onclick: async () => {
+          await api.call('browser:allowCert', id, b.cert.host);
+          const url = b.cert.url;
+          b.cert = null;
+          b.error = null;
+          b.wv.loadURL(url);
+          renderPane();
+        } }, `Continue to ${b.cert.host}`))));
+  }
+  const msg = friendlyLoadError(b, b.error);
+  return h('div', { class: 'empty' }, h('div', { class: 'empty-inner' },
+    h('h2', null, msg.title),
+    h('p', null, msg.text),
+    h('p', { class: 'muted mono', style: { fontSize: '12px' } }, b.error.url),
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn primary', onclick: () => reloadBrowser(id) }, 'Try again'),
+      h('button', { class: 'btn', onclick: () => showStart(id) }, 'Back to start'))));
+}
+
+function showStart(id) {
+  const b = browserState(id);
+  b.start = true;
+  b.address = '';
+  b.error = null;
+  b.cert = null;
+  b.ports = null;
+  if (state.selected === id) renderPane();
+}
+
+function browserMenu(anchor, id) {
+  const b = browserState(id);
+  showMenu(anchor, [
+    { label: 'Start page', run: () => showStart(id) },
+    { label: 'Copy address', run: () => { navigator.clipboard.writeText(b.url || ''); toast('Address copied.'); } },
+    { label: 'Developer tools', run: () => { if (b.wv && b.ready) b.wv.openDevTools(); } },
+    '-',
+    { label: 'Clear cookies and site data', danger: true, run: async () => {
+      const ok = await confirmDialog({ title: 'Clear browsing data?', desc: `Cookies, saved sign-ins and cache for pages opened through ${serverById(id).name} are removed. You will need to sign in to those tools again.`, confirm: 'Clear data', danger: true });
+      if (!ok) return;
+      await api.call('browser:clearData', id);
+      toast('Browsing data cleared.');
+      if (b.wv && !b.start) reloadBrowser(id);
+    } },
+  ]);
+}
+
+async function reconnectBrowser(id) {
+  const b = browserState(id);
+  try {
+    await connect(id);
+    await api.call('browser:open', id);
+  } catch (_) {
+    return;
+  }
+  if (b.wv && !b.start) reloadBrowser(id);
+  else if (state.selected === id) renderPane();
+}
+
+function reloadBrowser(id) {
+  const b = browserState(id);
+  if (!b.wv) return;
+  const url = (b.error && b.error.url) || b.url;
+  b.error = null;
+  b.cert = null;
+  if (url) b.wv.loadURL(url); else b.wv.reload();
+  if (state.selected === id) renderPane();
+}
+
+async function goTo(id, input) {
+  const url = normalizeAddress(input);
+  if (!url) { toast('Type an address like localhost:8080 or http://10.0.0.5:5050.', 'error', 'Not a web address.'); return; }
+  const b = browserState(id);
+  try {
+    await connect(id);
+    const { partition } = await api.call('browser:open', id);
+    b.partition = partition;
+  } catch (err) {
+    if (err.code !== 'CANCELLED') showError(err, 'Could not open the browser');
+    return;
+  }
+  b.start = false;
+  b.error = null;
+  b.cert = null;
+  b.url = url;
+  if (!b.wv) createWebview(id, url);
+  else b.wv.loadURL(url);
+  if (state.selected === id && view(id).tab === 'browser') renderPane();
+}
+
+function createWebview(id, url) {
+  const b = browserState(id);
+  const wv = document.createElement('webview');
+  wv.setAttribute('partition', b.partition);
+  wv.setAttribute('allowpopups', '');
+  wv.setAttribute('src', url);
+  const wrap = h('div', { class: 'browser-view' });
+  wrap.append(wv);
+  document.getElementById('browser-layer').append(wrap);
+  b.wv = wv;
+  b.wrap = wrap;
+  const refresh = () => { if (state.selected === id && view(id).tab === 'browser') renderPane(); };
+  const syncBar = () => {
+    if (!(state.selected === id && view(id).tab === 'browser')) return;
+    const bar = document.querySelector('.browser-bar');
+    if (!bar) return;
+    const addr = document.getElementById('address');
+    if (addr && document.activeElement !== addr && !b.start) addr.value = b.url;
+    const [back, fwd] = bar.querySelectorAll('.icon-btn');
+    back.disabled = !(b.ready && wv.canGoBack());
+    fwd.disabled = !(b.ready && wv.canGoForward());
+  };
+  wv.addEventListener('dom-ready', () => { b.ready = true; syncBar(); });
+  wv.addEventListener('did-start-loading', () => { b.loading = true; refresh(); });
+  wv.addEventListener('did-stop-loading', () => { b.loading = false; refresh(); });
+  wv.addEventListener('did-navigate', (e) => { b.url = e.url; if (!b.cert) b.error = null; syncBar(); });
+  wv.addEventListener('did-navigate-in-page', (e) => { if (e.isMainFrame) { b.url = e.url; syncBar(); } });
+  wv.addEventListener('page-title-updated', (e) => { b.title = e.title; });
+  wv.addEventListener('did-fail-load', (e) => {
+    if (!e.isMainFrame || e.errorCode === -3) return; // -3: aborted, e.g. by a new navigation
+    b.error = { code: e.errorCode, description: e.errorDescription, url: e.validatedURL };
+    b.loading = false;
+    refresh();
+  });
+}
+
+// Keep each server's page positioned over the visible slot, hidden otherwise.
+function placeBrowsers() {
+  const slot = document.getElementById('browser-slot');
+  const rect = slot && slot.getBoundingClientRect();
+  for (const [id, v] of browsersByServer()) {
+    const b = v.browser;
+    if (!b.wrap) continue;
+    const show = slot && state.selected === id && v.tab === 'browser' && !b.overlay;
+    if (show) {
+      Object.assign(b.wrap.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+      b.wrap.classList.add('on');
+    } else {
+      b.wrap.classList.remove('on');
+      if (b.wrap.contains(document.activeElement)) document.activeElement.blur();
+    }
+  }
+}
+window.addEventListener('resize', placeBrowsers);
+
+api.on('tunnel:error', ({ serverId, message }) => {
+  const v = state.views[serverId];
+  if (v && v.browser) v.browser.tunnelError = { message, at: Date.now() };
+});
+api.on('browser:cert', ({ serverId, url, host, error }) => {
+  const v = state.views[serverId];
+  if (!v || !v.browser) return;
+  v.browser.cert = { url, host, error };
+  if (state.selected === serverId && v.tab === 'browser') renderPane();
+});
+api.on('browser:download', ({ state: st, file, name }) => {
+  if (st === 'completed') toast(h('span', null, `Downloaded ${name}. `, h('button', { class: 'text-btn', onclick: () => api.call('sftp:reveal', file) }, 'Show in folder')));
+  else if (st === 'interrupted') toast(`Download of ${name} failed.`, 'error');
+});
+api.on('browser:key', ({ serverId, action }) => {
+  if (state.selected !== serverId) return;
+  const b = state.views[serverId] && state.views[serverId].browser;
+  if (action.startsWith('tab')) return setTab(['run', 'terminal', 'files', 'browser'][Number(action.slice(3)) - 1]);
+  if (!b || !b.wv) return;
+  if (action === 'address') { const a = document.getElementById('address'); if (a) a.focus(); }
+  if (action === 'reload') reloadBrowser(serverId);
+  if (action === 'back' && b.wv.canGoBack()) b.wv.goBack();
+  if (action === 'forward' && b.wv.canGoForward()) b.wv.goForward();
 });
 
 // ---------------------------------------------------------------------------
@@ -1490,9 +1816,9 @@ document.addEventListener('keydown', (e) => {
   const mod = isMac ? e.metaKey : e.ctrlKey;
   if (!mod || modalStack.length) return;
   if (e.key === 'k') { e.preventDefault(); document.getElementById('search').focus(); }
-  if (state.selected && ['1', '2', '3'].includes(e.key) && !e.shiftKey) {
+  if (state.selected && ['1', '2', '3', '4'].includes(e.key) && !e.shiftKey) {
     e.preventDefault();
-    setTab(['run', 'terminal', 'files'][Number(e.key) - 1]);
+    setTab(['run', 'terminal', 'files', 'browser'][Number(e.key) - 1]);
   }
 });
 

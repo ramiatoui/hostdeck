@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, Menu, nativeTheme, session } = require('electron');
 const { Store } = require('./store');
 const { SshManager } = require('./ssh');
 const { readDefaultSshConfig } = require('./sshconfig');
@@ -36,6 +36,49 @@ function send(channel, payload) {
 }
 
 /** Ask the user something in the UI. Resolves null if the window goes away. */
+// ---- built-in browser ------------------------------------------------------
+// Each server gets its own browser session (cookies, cache) whose traffic is
+// sent through that server's SSH connection via a local SOCKS5 proxy.
+const BROWSE_PREFIX = 'persist:hostdeck-browse-';
+const browseSessions = new Map(); // partition -> serverId
+const certAllow = new Map(); // serverId -> Set(host) allowed despite certificate errors
+
+function serverIdForContents(contents) {
+  for (const [partition, id] of browseSessions) {
+    if (session.fromPartition(partition) === contents.session) return id;
+  }
+  return null;
+}
+
+async function openBrowserSession(serverId) {
+  if (!store.getServer(serverId)) throw new Error('Server not found');
+  const port = await ssh.startProxy(serverId);
+  const partition = BROWSE_PREFIX + serverId;
+  const ses = session.fromPartition(partition);
+  if (!browseSessions.has(partition)) {
+    browseSessions.set(partition, serverId);
+    // Web pages get no camera, location, notifications and the like.
+    ses.setPermissionRequestHandler((_wc, permission, callback) => callback(['clipboard-sanitized-write', 'fullscreen'].includes(permission)));
+    ses.setPermissionCheckHandler((_wc, permission) => ['clipboard-sanitized-write', 'fullscreen'].includes(permission));
+    ses.on('will-download', (_e, item) => {
+      item.once('done', (_ev, state) => send('browser:download', { serverId, state, file: item.getSavePath(), name: item.getFilename() }));
+    });
+  }
+  // <-loopback> stops Chromium from skipping the proxy for localhost, so
+  // localhost means the server.
+  await ses.setProxy({ proxyRules: `socks5://127.0.0.1:${port}`, proxyBypassRules: '<-loopback>' });
+  await ses.closeAllConnections();
+  return { partition };
+}
+
+async function clearBrowserData(serverId) {
+  const ses = session.fromPartition(BROWSE_PREFIX + serverId);
+  await ses.clearStorageData();
+  await ses.clearCache();
+  await ses.clearAuthCache();
+  certAllow.delete(serverId);
+}
+
 function prompt(kind, payload) {
   return new Promise((resolve) => {
     if (!win || win.isDestroyed()) return resolve(null);
@@ -81,6 +124,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      webviewTag: true, // the Browser tab; locked down in will-attach-webview
     },
   });
   win.once('ready-to-show', () => win.show());
@@ -177,7 +221,8 @@ function registerIpc() {
     }
     return saved;
   });
-  handle('servers:delete', (id) => {
+  handle('servers:delete', async (id) => {
+    await clearBrowserData(id);
     ssh.disconnect(id);
     store.deleteServer(id);
   });
@@ -277,6 +322,15 @@ function registerIpc() {
   handle('shell:close', (shellId) => ssh.closeShell(shellId));
   ipcMain.on('shell:write', (_e, shellId, data) => ssh.writeShell(shellId, data));
 
+  // Browser
+  handle('browser:open', (serverId) => openBrowserSession(serverId));
+  handle('browser:ports', (serverId) => ssh.listeningPorts(serverId));
+  handle('browser:allowCert', (serverId, host) => {
+    if (!certAllow.has(serverId)) certAllow.set(serverId, new Set());
+    certAllow.get(serverId).add(host);
+  });
+  handle('browser:clearData', (serverId) => clearBrowserData(serverId));
+
   // SFTP
   handle('sftp:home', (serverId) => ssh.home(serverId));
   handle('sftp:list', (serverId, dir) => ssh.list(serverId, dir));
@@ -304,17 +358,85 @@ function registerIpc() {
   });
   handle('sftp:reveal', (localPath) => shell.showItemInFolder(localPath));
 
-  for (const ev of ['status', 'exec:data', 'exec:exit', 'shell:data', 'shell:exit', 'transfer']) {
+  for (const ev of ['status', 'exec:data', 'exec:exit', 'shell:data', 'shell:exit', 'transfer', 'tunnel:error']) {
     ssh.on(ev, (payload) => send(ev, payload));
   }
 }
 
 app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() === 'webview') {
+    // Pages in the Browser tab: links that open a new window load in place.
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) contents.loadURL(url);
+      return { action: 'deny' };
+    });
+    // Pages swallow key presses, so pass the app's shortcuts back to the UI.
+    contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const mod = process.platform === 'darwin' ? input.meta : input.control;
+      const key = input.key.toLowerCase();
+      let action = null;
+      if (mod && !input.shift && key === 'l') action = 'address';
+      else if ((mod && !input.shift && key === 'r') || input.key === 'F5') action = 'reload';
+      else if (input.alt && input.key === 'ArrowLeft') action = 'back';
+      else if (input.alt && input.key === 'ArrowRight') action = 'forward';
+      else if (mod && !input.shift && ['1', '2', '3', '4'].includes(input.key)) action = `tab${input.key}`;
+      if (!action) return;
+      const serverId = serverIdForContents(contents);
+      if (!serverId) return;
+      event.preventDefault();
+      send('browser:key', { serverId, action });
+    });
+    return;
+  }
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event) => event.preventDefault());
+  // Only allow browser views that use a server's tunnelled session, with no
+  // Node access or preload scripts.
+  contents.on('will-attach-webview', (event, webPreferences, params) => {
+    if (!String(params.partition || '').startsWith(BROWSE_PREFIX) || !browseSessions.has(params.partition)
+      || (params.src && !/^(https?:|about:blank)/i.test(params.src))) {
+      event.preventDefault();
+      return;
+    }
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.nodeIntegrationInSubFrames = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    webPreferences.webviewTag = false;
+  });
+});
+
+// Internal tools often use self-signed certificates. Ask once per host.
+app.on('certificate-error', (event, contents, url, error, _cert, callback) => {
+  const serverId = contents.getType() === 'webview' ? serverIdForContents(contents) : null;
+  if (!serverId) return callback(false);
+  event.preventDefault();
+  let host = '';
+  try { host = new URL(url).host; } catch (_) { /* ignore */ }
+  const allowed = certAllow.has(serverId) && certAllow.get(serverId).has(host);
+  if (!allowed) send('browser:cert', { serverId, url, host, error });
+  callback(allowed);
+});
+
+// HTTP basic/digest sign-in pages (for example a panel behind nginx auth).
+app.on('login', (event, contents, details, authInfo, callback) => {
+  const serverId = contents && contents.getType() === 'webview' ? serverIdForContents(contents) : null;
+  if (!serverId || authInfo.isProxy) return;
+  event.preventDefault();
+  const server = store.getServer(serverId);
+  prompt('http-login', {
+    server: { name: server.name, host: server.host, port: server.port, username: server.username },
+    site: authInfo.host + (authInfo.port && ![80, 443].includes(authInfo.port) ? `:${authInfo.port}` : ''),
+    realm: authInfo.realm || '',
+  }).then((answer) => {
+    if (answer && typeof answer.username === 'string') callback(answer.username, answer.password || '');
+    else callback();
+  });
 });
 
 app.on('second-instance', () => {
