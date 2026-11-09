@@ -832,11 +832,14 @@ function renderFiles(pane) {
     class: 'path-input', type: 'text', value: f.path || '', spellcheck: false, 'aria-label': 'Folder path',
     onkeydown: (e) => { if (e.key === 'Enter') loadDir(id, pathInput.value.trim() || '/'); },
   });
-  const listEl = h('div', { class: 'files-list', id: 'files-list' });
+  const listEl = h('div', {
+    class: 'files-list', id: 'files-list', tabindex: '0', 'aria-label': 'Files. Use the arrow keys to move, Enter to open, Backspace to go up.',
+    onkeydown: (ev) => fileKeys(ev, id, listEl),
+  });
 
   pane.append(
     h('div', { class: 'files-bar' },
-      h('button', { class: 'icon-btn', title: 'Parent folder', 'aria-label': 'Parent folder', onclick: () => loadDir(id, parentOf(f.path || '/')) }, icon(ICONS.up)),
+      h('button', { class: 'icon-btn', title: 'Parent folder (Backspace)', 'aria-label': 'Parent folder', onclick: () => goUp(id) }, icon(ICONS.up)),
       h('button', { class: 'icon-btn', title: 'Refresh', 'aria-label': 'Refresh', onclick: () => loadDir(id, f.path) }, icon(ICONS.refresh)),
       pathInput,
       h('button', { class: 'btn small', onclick: (e) => showMenu(e.currentTarget, [
@@ -866,6 +869,8 @@ function renderFiles(pane) {
 
   if (f.path === null) loadDir(id, null);
   else renderFileRows();
+  // Focus the list so the arrow keys work straight away.
+  setTimeout(() => { if (listEl.isConnected && (!document.activeElement || document.activeElement === document.body)) listEl.focus({ preventScroll: true }); }, 0);
 }
 
 function renderFileRows() {
@@ -879,12 +884,13 @@ function renderFileRows() {
   if (!f.entries.length) { listEl.append(h('div', { class: 'empty-dir' }, 'This folder is empty. Drop files here to upload them.')); return; }
   const isDir = (e) => e.type === 'dir' || (e.type === 'link' && e.linkTarget === 'dir');
   const tbody = h('tbody');
-  for (const e of f.entries) {
+  f.entries.forEach((e, index) => {
     const dir = isDir(e);
     const open = () => (dir ? loadDir(id, e.path) : openFile(id, e.path));
     const tr = h('tr', {
       class: `frow${f.selected === e.path ? ' sel' : ''}`,
-      onclick: () => { f.selected = e.path; listEl.querySelectorAll('tr.sel').forEach((r) => r.classList.remove('sel')); tr.classList.add('sel'); },
+      'data-index': String(index),
+      onclick: () => selectRow(id, index, false),
       ondblclick: open,
       oncontextmenu: (ev) => { ev.preventDefault(); fileMenu(ev.currentTarget.querySelector('.act button'), id, e, dir); },
     },
@@ -894,10 +900,85 @@ function renderFileRows() {
     h('td', { class: 'perm' }, fmtMode(e.mode, e.type)),
     h('td', { class: 'act' }, h('button', { class: 'icon-btn', 'aria-label': `Actions for ${e.name}`, onclick: (ev) => { ev.stopPropagation(); fileMenu(ev.currentTarget, id, e, dir); } }, icon(ICONS.more))));
     tbody.append(tr);
-  }
+  });
   listEl.append(h('table', { class: 'files' },
     h('thead', null, h('tr', null, h('th', null, 'Name'), h('th', null, 'Size'), h('th', null, 'Modified'), h('th', null, 'Permissions'), h('th', null, ''))),
     tbody));
+  const sel = listEl.querySelector('tr.frow.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+const isDirEntry = (e) => e.type === 'dir' || (e.type === 'link' && e.linkTarget === 'dir');
+
+function selectRow(id, index, scroll = true) {
+  const f = view(id).files;
+  const e = f.entries[index];
+  const listEl = document.getElementById('files-list');
+  if (!e || !listEl) return;
+  f.selected = e.path;
+  listEl.querySelectorAll('tr.frow.sel').forEach((r) => r.classList.remove('sel'));
+  const tr = listEl.querySelector(`tr.frow[data-index="${index}"]`);
+  if (tr) {
+    tr.classList.add('sel');
+    if (scroll) tr.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+async function goUp(id) {
+  const f = view(id).files;
+  const from = f.path || '/';
+  if (from === '/') return;
+  await loadDir(id, parentOf(from), { select: from });
+}
+
+// Keyboard navigation for the file list.
+function fileKeys(ev, id, listEl) {
+  if (ev.target !== listEl || ev.ctrlKey || ev.metaKey) return;
+  const f = view(id).files;
+  const entries = f.entries;
+  const i = entries.findIndex((e) => e.path === f.selected);
+  const row = listEl.querySelector('tr.frow');
+  const page = Math.max(1, Math.floor(listEl.clientHeight / (row ? row.offsetHeight : 32)) - 2);
+  const move = (n) => {
+    ev.preventDefault();
+    if (entries.length) selectRow(id, Math.max(0, Math.min(entries.length - 1, n)));
+  };
+  const cur = i < 0 ? -1 : i;
+  const e = entries[i];
+  switch (ev.key) {
+    case 'ArrowDown': return move(cur + 1);
+    case 'ArrowUp':
+      if (ev.altKey) { ev.preventDefault(); return goUp(id); }
+      return move(cur < 0 ? 0 : cur - 1);
+    case 'Home': return move(0);
+    case 'End': return move(entries.length - 1);
+    case 'PageDown': return move(Math.max(cur, 0) + page);
+    case 'PageUp': return move(Math.max(cur, 0) - page);
+    case 'Enter':
+    case 'ArrowRight':
+      if (!e || (ev.key === 'ArrowRight' && !isDirEntry(e))) return;
+      ev.preventDefault();
+      return isDirEntry(e) ? loadDir(id, e.path) : openFile(id, e.path);
+    case 'Backspace':
+    case 'ArrowLeft':
+      ev.preventDefault();
+      return goUp(id);
+    case 'Delete':
+      if (e) { ev.preventDefault(); removePath(id, e, isDirEntry(e)); }
+      return;
+    case 'F2':
+      if (e) { ev.preventDefault(); renamePath(id, e); }
+      return;
+    default:
+      // Type a letter to jump to the next name starting with it.
+      if (ev.key.length === 1 && !ev.altKey && entries.length) {
+        const k = ev.key.toLowerCase();
+        for (let n = 1; n <= entries.length; n += 1) {
+          const j = (cur + n + entries.length) % entries.length;
+          if (entries[j].name.toLowerCase().startsWith(k)) { ev.preventDefault(); return selectRow(id, j); }
+        }
+      }
+  }
 }
 
 function fileMenu(anchor, id, e, dir) {
@@ -913,15 +994,18 @@ function fileMenu(anchor, id, e, dir) {
   ]);
 }
 
-async function loadDir(id, dir) {
+async function loadDir(id, dir, { select = null } = {}) {
   const v = view(id);
   v.files.loading = true;
+  let changed = false;
   try {
     const target = dir || (await api.call('sftp:home', id));
     const res = await api.call('sftp:list', id, target);
+    changed = res.path !== v.files.path;
+    const keep = !changed && v.files.entries.some((e) => e.path === v.files.selected) ? v.files.selected : null;
     v.files.path = res.path;
     v.files.entries = res.entries;
-    v.files.selected = null;
+    v.files.selected = select || keep;
   } catch (err) {
     showError(err, 'Could not open folder');
     if (v.files.path === null) v.files.path = '/';
@@ -931,6 +1015,8 @@ async function loadDir(id, dir) {
   if (state.selected === id && v.tab === 'files' && !v.editor) {
     const input = document.querySelector('.path-input');
     if (input) input.value = v.files.path;
+    const listEl = document.getElementById('files-list');
+    if (listEl && changed) listEl.scrollTop = 0;
     renderFileRows();
   }
 }

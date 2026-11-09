@@ -1,5 +1,10 @@
 Hostdeck is a local-first SSH server manager for Linux, Windows and macOS.
 
+## Changes in 0.1.2
+
+- Fixed: the file list, the file editor and long command output could not be scrolled.
+- The file list works from the keyboard: arrow keys, Enter to open, Backspace for the parent folder, Home/End/Page Up/Page Down, type a letter to jump, F2 to rename, Delete to delete.
+
 ## Changes in 0.1.1
 
 - Linux: the app icon now shows in the applications menu, dock and taskbar after installing the .deb or running the AppImage.
