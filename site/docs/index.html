@@ -37,6 +37,7 @@
         <a href="#run">Run commands</a>
         <a href="#terminal">Terminal</a>
         <a href="#files">Files and editing</a>
+        <a href="#browser">Browser</a>
         <p>Reference</p>
         <a href="#shortcuts">Keyboard shortcuts</a>
         <a href="#data">Your data and security</a>
@@ -47,7 +48,7 @@
 
       <article class="doc" id="content">
         <h1>Hostdeck documentation</h1>
-        <p class="intro">Hostdeck keeps a list of the servers you reach over SSH and lets you run commands, open a terminal, and work with files on them. It runs on Linux, Windows and macOS, and everything it stores stays on your computer.</p>
+        <p class="intro">Hostdeck keeps a list of the servers you reach over SSH and lets you run commands, open a terminal, open web pages through the server, and work with files on them. It runs on Linux, Windows and macOS, and everything it stores stays on your computer.</p>
 
         <h2 id="install">Install</h2>
         <p>Download the file for your system from the <a href="https://github.com/ramiatoui/hostdeck/releases/latest">latest release</a>.</p>
@@ -180,6 +181,14 @@
           <li>To download, open a file's <strong>⋯</strong> menu (or right-click it) and choose <strong>Download</strong>. Folders download with everything inside.</li>
           <li>A progress bar at the bottom shows large transfers.</li>
         </ul>
+        <h3>Search</h3>
+        <p>Type in the search box (or press <kbd>Ctrl</kbd>+<kbd>F</kbd>) to filter the folder you are in as you type. To look further, choose <strong>Search subfolders</strong>, or press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in the search box: Hostdeck runs <code>find</code> on the server and lists every file and folder below the current folder whose name contains your text, with its path. Pressing <kbd>Enter</kbd> when nothing in the folder matches does the same.</p>
+        <ul>
+          <li>Matching ignores upper and lower case. Characters like <code>*</code> and <code>?</code> are matched literally.</li>
+          <li>The search goes up to 8 folders deep, skips <code>.git</code> and <code>node_modules</code>, and stops after 20 seconds or a few hundred results.</li>
+          <li>Open a result with a double-click or <kbd>Enter</kbd>. Closing the editor brings you back to the results; <kbd>Esc</kbd> or <kbd>Backspace</kbd> goes back to the folder.</li>
+        </ul>
+
         <h3>Edit a file</h3>
         <p>Double-click a text file to open it in the editor. It highlights shell scripts, YAML, JSON, nginx configs, <code>.env</code> files, Dockerfiles, Python, JavaScript, SQL and more. Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to save and <kbd>Ctrl</kbd>+<kbd>F</kbd> to search.</p>
         <ul>
@@ -195,6 +204,26 @@
           <img class="shot" src="../assets/editor.webp" width="2560" height="1586" loading="lazy" alt="Editing docker-compose.yml with YAML highlighting">
         </figure>
 
+        <h2 id="browser">Browser</h2>
+        <p>The Browser tab opens web pages as if you were sitting at the server. Everything it loads goes through the server's SSH connection, so <code>localhost</code> means the server itself and private addresses are the ones the server can reach. Admin tools you keep off the internet, such as phpMyAdmin on <code>localhost:8080</code> or pgAdmin on <code>localhost:5050</code>, open here without opening a port in the firewall.</p>
+        <figure>
+          <img class="shot" src="../assets/browser.webp" width="2560" height="1546" loading="lazy" alt="A dashboard served from localhost:8080 on the server, open in the Browser tab">
+          <figcaption>A dashboard that only listens on the server's localhost, opened through the web-1 connection.</figcaption>
+        </figure>
+        <h3>Open a page</h3>
+        <p>Type an address in the bar and press <kbd>Enter</kbd>. Short forms work: <code>8080</code> means <code>http://localhost:8080</code>, and addresses without <code>http://</code> or <code>https://</code> use HTTP, except ports 443, 8443 and 9443, which use HTTPS. The start page lists the TCP ports the server is listening on (from <code>ss</code> or <code>netstat</code>), with hints for common tools; click one to open it. Ports that are almost never web pages, such as SSH, mail and databases, are left out.</p>
+        <p>Links, forms, sign-ins and downloads work as in any browser. Links that would open a new window open in the same view. Downloads ask where to save the file on your computer.</p>
+        <h3>Sign-ins, cookies and certificates</h3>
+        <ul>
+          <li>Each server has its own cookies and saved sign-ins, kept between launches. <strong>⋯ → Clear cookies and site data</strong> removes them.</li>
+          <li>Pages behind HTTP sign-in (for example nginx basic auth) show a sign-in dialog.</li>
+          <li>Internal tools often use a self-signed certificate. Hostdeck stops and asks before continuing to such a site, once per address.</li>
+          <li><strong>⋯ → Developer tools</strong> opens Chromium's developer tools for the page.</li>
+        </ul>
+        <h3>Connection</h3>
+        <p>The browser needs the server to be connected and keeps the connection open while you use it. If the connection drops, the page is hidden until you choose <strong>Reconnect</strong>, then it picks up where you were. Pages stay open while you switch to other tabs or servers.</p>
+        <p>Behind the scenes, Hostdeck runs a small proxy on your computer, listening on <code>127.0.0.1</code> only, that opens each connection from the server's side. It is the same thing <code>ssh -D</code> does, and it stops when you disconnect. The server needs SSH port forwarding enabled, which is the default for OpenSSH.</p>
+
         <h2 id="shortcuts">Keyboard shortcuts</h2>
         <p>On a Mac, use <kbd>⌘</kbd> wherever this table says <kbd>Ctrl</kbd>.</p>
         <table>
@@ -202,15 +231,19 @@
           <tbody>
             <tr><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Add a server</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Find a server</td></tr>
-            <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td>Run, Terminal, Files tab</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> / <kbd>4</kbd></td><td>Run, Terminal, Files, Browser tab</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Run the command</td></tr>
             <tr><td><kbd>↑</kbd> in an empty command box</td><td>Load the last command</td></tr>
             <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd> in Files</td><td>Move through the file list and open the selected item</td></tr>
             <tr><td><kbd>Backspace</kbd> in Files</td><td>Go to the parent folder</td></tr>
             <tr><td><kbd>F2</kbd> / <kbd>Delete</kbd> in Files</td><td>Rename / delete the selected item</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd> in Files</td><td>Search the folder; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> searches subfolders</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save the file in the editor</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Search in the editor</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> / <kbd>V</kbd></td><td>Copy / paste in the terminal</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd> in Browser</td><td>Go to the address bar</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd> or <kbd>F5</kbd> in Browser</td><td>Reload the page</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> in Browser</td><td>Back / forward</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Settings</td></tr>
             <tr><td>Double-click a server</td><td>Connect</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>Close a dialog or menu</td></tr>
@@ -228,6 +261,7 @@
           </tbody>
         </table>
         <p>Settings → <strong>Show data folder</strong> opens it.</p>
+        <p>Pages you open in the Browser tab keep their cookies and cache in the same folder, separately for each server.</p>
         <h3>How secrets are protected</h3>
         <p>Saved passwords, pasted private keys and passphrases are encrypted before they are written, using the macOS Keychain, Windows DPAPI, or the Linux secret service (GNOME Keyring or KWallet). Key files you choose with Browse are never copied; only their path is saved. Settings shows which secret storage is in use.</p>
         <div class="callout warn"><p>On Linux without a keyring, saved passwords can only be lightly obscured, and Hostdeck warns you in the server form. On those systems, prefer an SSH key, the SSH agent, or “Ask for the password every time”.</p></div>
@@ -262,6 +296,10 @@
         <p>Start your agent and add a key. On Linux and macOS: <code>eval "$(ssh-agent)"</code> then <code>ssh-add</code>. On Windows, start the “OpenSSH Authentication Agent” service in Services, or set the agent path to <code>pageant</code> if you use Pageant.</p>
         <h3>The host key changed</h3>
         <p>See <a href="#host-keys">Host keys</a>. If you rebuilt the server, choose <strong>Trust new key</strong>.</p>
+        <h3>The Browser says nothing is listening</h3>
+        <p>No service accepted the connection at that address, as seen from the server. Check the service is running and which port it uses (<code>ss -ltn</code> on the server lists them). A service in a Docker container is only reachable if its port is published, for example <code>-p 127.0.0.1:8080:80</code>.</p>
+        <h3>The Browser says the server does not allow port forwarding</h3>
+        <p>The server's SSH configuration turns off forwarding. Set <code>AllowTcpForwarding yes</code> in <code>/etc/ssh/sshd_config</code> and restart SSH with <code>sudo systemctl restart ssh</code> (or <code>sshd</code>).</p>
         <h3>Cannot save a file</h3>
         <p>You are probably editing a file your user cannot write, such as one in <code>/etc</code>. Use the Terminal with <code>sudo</code>, or adjust the file's owner or permissions.</p>
         <h3>Still stuck?</h3>

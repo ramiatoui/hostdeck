@@ -2,7 +2,7 @@
 
 A local-first SSH server manager for Linux, Windows and macOS.
 
-Save your servers once, then pick one, type a command and hit **Run**. Keep the connection open for longer sessions, open a full terminal, or browse, upload and edit files over SFTP. Everything stays on your computer: no account, no cloud sync, no telemetry.
+Save your servers once, then pick one, type a command and hit **Run**. Keep the connection open for longer sessions, open a full terminal, browse, search, upload and edit files over SFTP, or open web tools that only the server can reach. Everything stays on your computer: no account, no cloud sync, no telemetry.
 
 ![Hostdeck running commands on a server](site/assets/run.webp)
 
@@ -12,7 +12,8 @@ Save your servers once, then pick one, type a command and hit **Run**. Keep the 
 
 - **Run** commands and see live output, errors, exit code and duration. Per-server history, snippets, a working folder, and a confirmation before destructive commands.
 - **Terminal**: a full interactive shell (xterm.js) for vim, htop and long sessions.
-- **Files**: SFTP browser with drag-and-drop upload, folder download, rename, permissions, delete, and an editor with syntax highlighting that won't overwrite changes made on the server without asking.
+- **Browser**: open web pages through the server's SSH connection, so `localhost:8080` is the server's localhost. Admin tools kept off the internet (phpMyAdmin, pgAdmin, dashboards) open directly; listening ports are suggested.
+- **Files**: SFTP browser with drag-and-drop upload, folder download, rename, permissions, delete, search in the folder or all subfolders, and an editor with syntax highlighting that won't overwrite changes made on the server without asking.
 - **Every common login**: password (saved encrypted or asked each time), private key file or pasted key with passphrase, SSH agent / Pageant, keyboard-interactive 2FA, jump hosts, and legacy algorithms for old devices.
 - **Host key verification**: trust on first use, with a clear warning if a key changes.
 - **Import** hosts from `~/.ssh/config`, and export your server list (without secrets) to another computer.

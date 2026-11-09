@@ -1,5 +1,10 @@
 Hostdeck is a local-first SSH server manager for Linux, Windows and macOS.
 
+## Changes in 0.2.0
+
+- New Browser tab: open web pages through the server's SSH connection. `localhost:8080` is the server's own localhost, so admin tools that are not open to the internet, like phpMyAdmin or pgAdmin, work directly. The start page lists the server's listening web ports. Separate cookies per server, self-signed certificate prompt, HTTP sign-in and downloads supported.
+- File search: filter the current folder as you type (Ctrl+F), or search every folder below it on the server.
+
 ## Changes in 0.1.2
 
 - Fixed: the file list, the file editor and long command output could not be scrolled.
@@ -25,6 +30,7 @@ These builds are not code-signed yet. Windows may show “Windows protected your
 - Save servers in groups; run commands and read output, errors, exit code and duration
 - Keep a connection open for more commands, or let it close after each run
 - Interactive terminal for longer sessions
+- Browser that loads pages through the server, for admin tools bound to localhost or a private network
 - File browser over SFTP: upload (including drag and drop), download, edit with syntax highlighting, rename, permissions, delete
 - Sign in with a password, a key file or pasted key, the SSH agent or Pageant, or 2FA prompts; jump hosts and legacy algorithms supported
 - Host key verification, import from `~/.ssh/config`, export without secrets

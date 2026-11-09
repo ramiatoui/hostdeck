@@ -334,6 +334,7 @@ function registerIpc() {
   // SFTP
   handle('sftp:home', (serverId) => ssh.home(serverId));
   handle('sftp:list', (serverId, dir) => ssh.list(serverId, dir));
+  handle('sftp:find', (serverId, dir, query) => ssh.findFiles(serverId, dir, query));
   handle('sftp:read', (serverId, p) => ssh.readFile(serverId, p));
   handle('sftp:write', (serverId, p, content, opts) => ssh.writeFile(serverId, p, content, opts));
   handle('sftp:mkdir', (serverId, p) => ssh.mkdir(serverId, p));

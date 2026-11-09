@@ -431,3 +431,19 @@ details.more summary { cursor: pointer; color: var(--muted); font-size: 13px; ma
 .port:hover { background: var(--raised); }
 .port .mono { font-size: 13.5px; }
 .port .muted { font-size: 12.5px; }
+
+/* ---------- file search ---------- */
+.file-search {
+  display: flex; align-items: center; gap: 6px; width: 210px; height: 32px; padding: 0 8px;
+  background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--faint);
+}
+.file-search:focus-within { border-color: var(--focus); }
+.file-search svg { width: 15px; height: 15px; flex: none; }
+.file-search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--text); font-size: 13px; }
+.search-note {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 14px; background: color-mix(in srgb, var(--amber) 14%, var(--bg)); border-bottom: 1px solid var(--line-soft); font-size: 13px;
+}
+.search-note ~ table.files tr.frow { scroll-margin-top: 76px; }
+.search-note + table.files th { top: 37px; }
+table.files td.name .muted { font-family: var(--mono); font-size: 12px; }

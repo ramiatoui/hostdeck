@@ -115,7 +115,7 @@ function view(id) {
       keepOpen: Boolean(state.settings.keepOpenByDefault),
       history: [],
       draft: '',
-      files: { path: null, entries: [], loading: false, selected: null },
+      files: { path: null, entries: [], loading: false, selected: null, filter: '', deep: null, deepLoading: false },
       shell: null, // { shellId, term, fit, el }
       editor: null, // { path, file, instance, dirty }
     };
@@ -1168,6 +1168,12 @@ function renderFiles(pane) {
       h('button', { class: 'icon-btn', title: 'Parent folder (Backspace)', 'aria-label': 'Parent folder', onclick: () => goUp(id) }, icon(ICONS.up)),
       h('button', { class: 'icon-btn', title: 'Refresh', 'aria-label': 'Refresh', onclick: () => loadDir(id, f.path) }, icon(ICONS.refresh)),
       pathInput,
+      h('label', { class: 'file-search' }, icon('<circle cx="11" cy="11" r="6"/><path d="m20 20-4.2-4.2"/>'),
+        h('input', {
+          id: 'file-search', type: 'search', placeholder: `Search (${MOD}${isMac ? '' : '+'}F)`, value: f.filter, spellcheck: false, autocomplete: 'off', 'aria-label': 'Search files',
+          oninput: (e) => { f.filter = e.target.value; f.deep = null; f.selected = null; renderFileRows(); },
+          onkeydown: (e) => searchKeys(e, id),
+        })),
       h('button', { class: 'btn small', onclick: (e) => showMenu(e.currentTarget, [
         { label: 'New file…', run: () => newFile(id) },
         { label: 'New folder…', run: () => newFolder(id) },
@@ -1207,10 +1213,20 @@ function renderFileRows() {
   const f = v.files;
   listEl.textContent = '';
   if (f.loading && !f.entries.length) { listEl.append(h('div', { class: 'empty-dir' }, 'Loading…')); return; }
-  if (!f.entries.length) { listEl.append(h('div', { class: 'empty-dir' }, 'This folder is empty. Drop files here to upload them.')); return; }
+  const note = searchNote(id);
+  if (note) listEl.append(note);
+  if (f.deepLoading) return;
+  const list = visibleEntries(f);
+  if (!f.entries.length && !f.deep) { listEl.append(h('div', { class: 'empty-dir' }, 'This folder is empty. Drop files here to upload them.')); return; }
+  if (!list.length) {
+    listEl.append(h('div', { class: 'empty-dir' }, f.deep
+      ? `Nothing below ${f.deep.dir} has “${f.deep.query}” in its name.`
+      : `Nothing in this folder matches “${f.filter.trim()}”.`));
+    return;
+  }
   const isDir = (e) => e.type === 'dir' || (e.type === 'link' && e.linkTarget === 'dir');
   const tbody = h('tbody');
-  f.entries.forEach((e, index) => {
+  list.forEach((e, index) => {
     const dir = isDir(e);
     const open = () => (dir ? loadDir(id, e.path) : openFile(id, e.path));
     const tr = h('tr', {
@@ -1220,10 +1236,11 @@ function renderFileRows() {
       ondblclick: open,
       oncontextmenu: (ev) => { ev.preventDefault(); fileMenu(ev.currentTarget.querySelector('.act button'), id, e, dir); },
     },
-    h('td', { class: 'name', title: e.name }, icon(dir ? ICONS.dir : e.type === 'link' ? ICONS.link : ICONS.file, `ico${dir ? ' dir' : ''}`), e.name),
+    h('td', { class: 'name', title: e.rel || e.name }, icon(dir ? ICONS.dir : e.type === 'link' ? ICONS.link : ICONS.file, `ico${dir ? ' dir' : ''}`),
+      e.rel && e.rel.includes('/') ? h('span', { class: 'muted' }, e.rel.slice(0, e.rel.length - e.name.length)) : null, e.name),
     h('td', { class: 'num' }, dir ? '' : fmtBytes(e.size)),
     h('td', { class: 'num' }, fmtDate(e.mtime)),
-    h('td', { class: 'perm' }, fmtMode(e.mode, e.type)),
+    h('td', { class: 'perm' }, e.mode === undefined ? '' : fmtMode(e.mode, e.type)),
     h('td', { class: 'act' }, h('button', { class: 'icon-btn', 'aria-label': `Actions for ${e.name}`, onclick: (ev) => { ev.stopPropagation(); fileMenu(ev.currentTarget, id, e, dir); } }, icon(ICONS.more))));
     tbody.append(tr);
   });
@@ -1236,9 +1253,82 @@ function renderFileRows() {
 
 const isDirEntry = (e) => e.type === 'dir' || (e.type === 'link' && e.linkTarget === 'dir');
 
+// ---- search: filter the folder as you type, or search subfolders on the server
+function visibleEntries(f) {
+  if (f.deep) return f.deep.results;
+  const q = f.filter.trim().toLowerCase();
+  return q ? f.entries.filter((e) => e.name.toLowerCase().includes(q)) : f.entries;
+}
+
+function searchNote(id) {
+  const f = view(id).files;
+  const q = f.filter.trim();
+  if (f.deepLoading) return h('div', { class: 'search-note' }, h('span', null, `Searching below ${f.path} for “${q}”…`));
+  if (f.deep) {
+    const n = f.deep.results.length;
+    return h('div', { class: 'search-note' },
+      h('span', null, `${n} result${n === 1 ? '' : 's'} for “${f.deep.query}” in ${f.deep.dir} and its subfolders${f.deep.truncated ? ', showing the first ones' : ''}`),
+      h('button', { class: 'text-btn', onclick: () => clearFileSearch(id, true) }, 'Back to folder'));
+  }
+  if (!q) return null;
+  const n = visibleEntries(f).length;
+  return h('div', { class: 'search-note' },
+    h('span', null, `${n} of ${f.entries.length} in this folder match “${q}”`),
+    h('button', { class: 'text-btn', onclick: () => searchSubfolders(id) }, 'Search subfolders'));
+}
+
+async function searchSubfolders(id) {
+  const f = view(id).files;
+  const q = f.filter.trim();
+  if (!q) return;
+  f.deepLoading = true;
+  f.deep = null;
+  f.selected = null;
+  renderFileRows();
+  try {
+    f.deep = await api.call('sftp:find', id, f.path, q);
+  } catch (err) {
+    showError(err, 'Search failed');
+  } finally {
+    f.deepLoading = false;
+  }
+  if (state.selected === id && view(id).tab === 'files' && !view(id).editor) {
+    renderFileRows();
+    const listEl = document.getElementById('files-list');
+    if (listEl && f.deep && f.deep.results.length) { listEl.focus(); selectRow(id, 0); }
+  }
+}
+
+function clearFileSearch(id, focusList) {
+  const f = view(id).files;
+  f.filter = '';
+  f.deep = null;
+  f.selected = null;
+  const box = document.getElementById('file-search');
+  if (box) box.value = '';
+  renderFileRows();
+  const listEl = document.getElementById('files-list');
+  if (focusList && listEl) listEl.focus();
+}
+
+function searchKeys(e, id) {
+  const f = view(id).files;
+  const listEl = document.getElementById('files-list');
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (f.filter || f.deep) clearFileSearch(id, false);
+    else if (listEl) listEl.focus();
+  } else if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (e.key === 'Enter' && f.filter.trim() && !f.deep && !visibleEntries(f).length) { searchSubfolders(id); return; }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && f.filter.trim()) { searchSubfolders(id); return; }
+    if (listEl && visibleEntries(f).length) { listEl.focus(); selectRow(id, 0); }
+  }
+}
+
 function selectRow(id, index, scroll = true) {
   const f = view(id).files;
-  const e = f.entries[index];
+  const e = visibleEntries(f)[index];
   const listEl = document.getElementById('files-list');
   if (!e || !listEl) return;
   f.selected = e.path;
@@ -1261,7 +1351,7 @@ async function goUp(id) {
 function fileKeys(ev, id, listEl) {
   if (ev.target !== listEl || ev.ctrlKey || ev.metaKey) return;
   const f = view(id).files;
-  const entries = f.entries;
+  const entries = visibleEntries(f);
   const i = entries.findIndex((e) => e.path === f.selected);
   const row = listEl.querySelector('tr.frow');
   const page = Math.max(1, Math.floor(listEl.clientHeight / (row ? row.offsetHeight : 32)) - 2);
@@ -1288,7 +1378,11 @@ function fileKeys(ev, id, listEl) {
     case 'Backspace':
     case 'ArrowLeft':
       ev.preventDefault();
+      if (f.deep || f.filter) return clearFileSearch(id, true);
       return goUp(id);
+    case 'Escape':
+      if (f.deep || f.filter) { ev.preventDefault(); clearFileSearch(id, true); }
+      return;
     case 'Delete':
       if (e) { ev.preventDefault(); removePath(id, e, isDirEntry(e)); }
       return;
@@ -1332,6 +1426,12 @@ async function loadDir(id, dir, { select = null } = {}) {
     v.files.path = res.path;
     v.files.entries = res.entries;
     v.files.selected = select || keep;
+    if (changed) {
+      v.files.filter = '';
+      v.files.deep = null;
+      const box = document.getElementById('file-search');
+      if (box) box.value = '';
+    }
   } catch (err) {
     showError(err, 'Could not open folder');
     if (v.files.path === null) v.files.path = '/';
@@ -1378,7 +1478,7 @@ async function renamePath(id, e) {
 }
 
 async function chmodPath(id, e) {
-  const value = await inputDialog({ title: `Permissions for ${e.name}`, desc: 'Octal mode, for example 644 for files or 755 for folders and scripts.', label: 'Mode', value: (e.mode & 0o777).toString(8), confirm: 'Apply' });
+  const value = await inputDialog({ title: `Permissions for ${e.name}`, desc: 'Octal mode, for example 644 for files or 755 for folders and scripts.', label: 'Mode', value: e.mode === undefined ? '' : (e.mode & 0o777).toString(8), confirm: 'Apply' });
   if (!value) return;
   if (!/^[0-7]{3,4}$/.test(value.trim())) { toast('Use an octal mode like 644 or 0755.', 'error', 'Invalid mode.'); return; }
   try { await api.call('sftp:chmod', id, e.path, value.trim()); await loadDir(id, view(id).files.path); } catch (err) { showError(err, 'Could not change permissions'); }
@@ -1816,6 +1916,10 @@ document.addEventListener('keydown', (e) => {
   const mod = isMac ? e.metaKey : e.ctrlKey;
   if (!mod || modalStack.length) return;
   if (e.key === 'k') { e.preventDefault(); document.getElementById('search').focus(); }
+  if (e.key === 'f' && state.selected && view(state.selected).tab === 'files' && !view(state.selected).editor) {
+    const box = document.getElementById('file-search');
+    if (box) { e.preventDefault(); box.focus(); box.select(); }
+  }
   if (state.selected && ['1', '2', '3', '4'].includes(e.key) && !e.shiftKey) {
     e.preventDefault();
     setTab(['run', 'terminal', 'files', 'browser'][Number(e.key) - 1]);

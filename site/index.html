@@ -31,7 +31,7 @@
   <main id="main">
     <div class="wrap hero">
       <h1>Save your servers. Pick one. Run.</h1>
-      <p class="lede">Hostdeck is a desktop SSH manager for Linux, Windows and macOS. Keep every server you reach over SSH in one list, then run commands, open a terminal, and upload or edit files. Your connections and keys never leave your computer.</p>
+      <p class="lede">Hostdeck is a desktop SSH manager for Linux, Windows and macOS. Keep every server you reach over SSH in one list, then run commands, open a terminal, upload or edit files, and open web tools that only the server can reach. Your connections and keys never leave your computer.</p>
       <div class="cta">
         <a class="btn primary" id="cta-download" href="#download">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>
@@ -78,7 +78,7 @@
     <section class="wrap" id="features" aria-labelledby="features-title">
       <div class="section-head">
         <h2 id="features-title">One window for the work you do over SSH</h2>
-        <p>Three tabs per server. Use whichever fits the job.</p>
+        <p>Four tabs per server. Use whichever fits the job.</p>
       </div>
 
       <div class="feature">
@@ -108,11 +108,25 @@
           <p>Browse the server, drag files in from your desktop, and edit configs with syntax highlighting. If someone else changed a file since you opened it, Hostdeck tells you before you overwrite their work.</p>
           <ul>
             <li>Folders upload and download with progress</li>
+            <li>Search the folder as you type, or every folder below it</li>
             <li>Rename, change permissions, delete</li>
             <li>On OpenSSH servers, saves are atomic: a dropped connection never leaves half a file</li>
           </ul>
         </div>
         <img class="shot" src="assets/editor.webp" width="2560" height="1586" loading="lazy" alt="Hostdeck editing docker-compose.yml on a server with YAML syntax highlighting">
+      </div>
+
+      <div class="feature flip">
+        <div class="feature-text">
+          <h3>Open web tools that only the server can reach</h3>
+          <p>The Browser tab loads pages through the SSH connection, so <code>localhost:8080</code> is the server's own localhost. phpMyAdmin, pgAdmin, a queue dashboard or anything else you kept off the internet opens right here, with no firewall changes and no tunnels to set up.</p>
+          <ul>
+            <li>Lists the web ports the server is listening on</li>
+            <li>Private addresses work too, like a database host on 10.0.0.5</li>
+            <li>Separate cookies and sign-ins for each server</li>
+          </ul>
+        </div>
+        <img class="shot" src="assets/browser.webp" width="2560" height="1546" loading="lazy" alt="Hostdeck Browser tab showing a queue dashboard served from localhost:8080 on the web-1 server">
       </div>
     </section>
 

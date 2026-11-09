@@ -650,6 +650,38 @@ class SshManager extends EventEmitter {
     return { path: target, entries };
   }
 
+  /**
+   * Find files and folders whose name contains `query` (any case) below
+   * `dir`, using find on the server. Skips .git and node_modules.
+   */
+  async findFiles(serverId, dir, query, { maxDepth = 8, limit = 300 } = {}) {
+    const q = String(query || '').trim();
+    if (!q) return { dir, results: [], truncated: false };
+    const pattern = `*${q.replace(/[\\*?[\]]/g, (c) => `\\${c}`)}*`;
+    const find = (typeTest) => `$T find . -maxdepth ${maxDepth} \\( -name .git -o -name node_modules \\) -prune -o -iname ${shellQuote(pattern)} ${typeTest} -print 2>/dev/null | head -n ${limit + 1}`;
+    const script = [
+      `cd ${shellQuote(dir)} 2>/dev/null || { echo 'E cannot open folder'; exit 0; }`,
+      "T=; command -v timeout >/dev/null 2>&1 && T='timeout 20'",
+      `${find('-type d')} | sed 's/^/d /'`,
+      `${find('! -type d')} | sed 's/^/f /'`,
+    ].join('\n');
+    const out = await this.capture(serverId, script);
+    if (/^E cannot open folder/m.test(out)) throw new SshError('NOT_FOUND', `Cannot search ${dir}.`);
+    const dirs = [];
+    const files = [];
+    for (const line of out.split('\n')) {
+      const m = line.match(/^([df]) \.\/(.+)$/);
+      if (!m) continue;
+      const rel = m[2];
+      const entry = { name: posix.basename(rel), rel, path: posix.join(dir, rel), type: m[1] === 'd' ? 'dir' : 'file' };
+      (m[1] === 'd' ? dirs : files).push(entry);
+    }
+    const truncated = dirs.length > limit || files.length > limit;
+    const byPath = (a, b) => a.rel.split('/').length - b.rel.split('/').length || a.rel.localeCompare(b.rel);
+    const results = [...dirs.slice(0, limit).sort(byPath), ...files.slice(0, limit).sort(byPath)];
+    return { dir, query: q, results, truncated };
+  }
+
   async readFile(serverId, remotePath, { maxBytes = MAX_EDIT_BYTES } = {}) {
     const ops = await this._ops(serverId);
     const st = await ops.stat(remotePath);

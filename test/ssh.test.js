@@ -276,3 +276,29 @@ test('an unresponsive host times out', async (t) => {
   const s = await store.upsertServer({ host: '127.0.0.1', port: silent.address().port, username: 'u', auth: 'interactive' });
   await assert.rejects(ssh.connect(s.id), (e) => e.code === 'ETIMEDOUT');
 });
+
+test('finds files and folders by name below a folder', { skip: process.platform === 'win32' }, async (t) => {
+  const srv = await startServer({ root: tempDir(), user: { username: 'u', password: 'p' } });
+  t.after(() => srv.close());
+  const { store, ssh } = setup({ answers: { hostkey: 'once' } });
+  t.after(() => ssh.disconnectAll());
+  const s = await store.upsertServer({ host: '127.0.0.1', port: srv.port, username: 'u', password: 'p' });
+  await ssh.connect(s.id);
+
+  // The test server runs commands on this machine, so search a real folder.
+  const dir = fs.realpathSync(tempDir());
+  for (const d of ['nginx/sites-available', 'app/config', 'app/.git/logs', 'app/node_modules/x', 'weird [dir]']) fs.mkdirSync(path.join(dir, d), { recursive: true });
+  for (const f of ['nginx/nginx.conf', 'nginx/sites-available/Default.CONF', 'app/config/app.conf', 'app/.git/logs/x.conf', 'app/node_modules/x/y.conf', 'app/readme.md', 'weird [dir]/a*b.conf']) fs.writeFileSync(path.join(dir, f), '');
+
+  const res = await ssh.findFiles(s.id, dir, '.conf');
+  assert.deepEqual(res.results.map((r) => r.rel), ['nginx/nginx.conf', 'weird [dir]/a*b.conf', 'app/config/app.conf', 'nginx/sites-available/Default.CONF'], 'shallowest first, .git and node_modules skipped');
+  assert.equal(res.results[0].path, `${dir}/nginx/nginx.conf`);
+
+  const folders = await ssh.findFiles(s.id, dir, 'CONFIG');
+  assert.deepEqual(folders.results.map((r) => [r.rel, r.type]), [['app/config', 'dir']]);
+
+  const literal = await ssh.findFiles(s.id, dir, 'a*b');
+  assert.deepEqual(literal.results.map((r) => r.rel), ['weird [dir]/a*b.conf'], 'wildcards in the query are literal');
+  assert.deepEqual(store.getHistory(s.id), [], 'searching does not add to command history');
+  await assert.rejects(ssh.findFiles(s.id, path.join(dir, 'missing'), 'x'), /Cannot search/);
+});
