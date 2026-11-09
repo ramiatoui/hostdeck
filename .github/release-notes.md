@@ -1,5 +1,9 @@
 Hostdeck is a local-first SSH server manager for Linux, Windows and macOS.
 
+## Changes in 0.3.0
+
+- Server health in the header while connected: disk, memory, load and uptime, refreshed about every 30 seconds. Disk and memory turn amber at 80% and red at 90%; hover for details, click to refresh.
+
 ## Changes in 0.2.1
 
 - The server header shows the server's group next to its name.

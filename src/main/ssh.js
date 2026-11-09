@@ -10,6 +10,7 @@ const { Client, utils } = require('ssh2');
 const { expandHome } = require('./sshconfig');
 const { startSocksServer } = require('./socks');
 const { parseListeningPorts, LIST_PORTS_COMMAND } = require('./ports');
+const { HEALTH_COMMAND, parseHealth } = require('./health');
 
 const MAX_EDIT_BYTES = 5 * 1024 * 1024;
 const MAX_JUMP_DEPTH = 5;
@@ -458,6 +459,11 @@ class SshManager extends EventEmitter {
   async listeningPorts(serverId) {
     const out = await this.capture(serverId, LIST_PORTS_COMMAND);
     return parseListeningPorts(out);
+  }
+
+  /** Disk, memory, load and uptime, read without touching command history. */
+  async health(serverId) {
+    return parseHealth(await this.capture(serverId, HEALTH_COMMAND));
   }
 
   /** Run a command and return its stdout, without adding it to history. */

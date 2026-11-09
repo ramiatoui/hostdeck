@@ -35,6 +35,7 @@
         <a href="#import">Import from SSH config</a>
         <p>Working on a server</p>
         <a href="#run">Run commands</a>
+        <a href="#health">Server health</a>
         <a href="#terminal">Terminal</a>
         <a href="#files">Files and editing</a>
         <a href="#browser">Browser</a>
@@ -164,6 +165,19 @@
         </ul>
         <p>Commands that look destructive, such as <code>rm -rf /</code>, <code>mkfs</code>, writing to a disk device, or <code>reboot</code> and <code>shutdown</code>, ask for confirmation first. You can turn this off in Settings.</p>
         <div class="callout"><p>Each Run starts a fresh shell, so <code>cd</code> or exported variables do not carry over to the next Run. Use <strong>Run in</strong>, chain commands with <code>&amp;&amp;</code>, or open the Terminal for a session that remembers state.</p></div>
+
+        <h2 id="health">Server health</h2>
+        <p>While a server is connected, the top of the window shows four numbers for it, refreshed about every 30 seconds:</p>
+        <table>
+          <tbody>
+            <tr><td>Disk</td><td>How full the root file system (<code>/</code>) is, as <code>df</code> reports it.</td></tr>
+            <tr><td>Memory</td><td>Memory in use, not counting cache the system can free. Hover for used, total, available and swap.</td></tr>
+            <tr><td>Load</td><td>The 1-minute load average and the number of CPUs. Hover for the 5 and 15-minute values.</td></tr>
+            <tr><td>Up</td><td>How long since the server last started.</td></tr>
+          </tbody>
+        </table>
+        <p>Disk and memory turn amber at 80% and red at 90%. Load turns amber when it reaches the number of CPUs, and red at twice that. Click the numbers to refresh them right away.</p>
+        <p>Hostdeck reads these from <code>/proc</code> and <code>df</code> without adding anything to your command history, and only while you are already connected; it never connects just to check. Servers that are not Linux, such as network devices, simply show no numbers. On narrow windows, uptime and load are hidden first.</p>
 
         <h2 id="terminal">Terminal</h2>
         <p>The Terminal tab opens a full interactive shell, the same as <code>ssh user@host</code>. Use it for editors like vim and nano, <code>htop</code>, database prompts, or scripts that ask questions. It resizes with the window and keeps 5,000 lines of scrollback.</p>

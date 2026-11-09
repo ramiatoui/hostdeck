@@ -433,6 +433,7 @@ function select(id) {
   state.selected = id;
   renderDeck();
   renderMain();
+  refreshHealthIfStale(id);
   api.call('history:get', id).then((hist) => {
     view(id).history = hist;
     if (state.selected === id && view(id).tab === 'run') renderHistory();
@@ -458,6 +459,8 @@ async function disconnect(id) {
 
 api.on('status', ({ serverId, state: st, message }) => {
   state.status[serverId] = { state: st, message };
+  if (st !== 'connected') delete healthBy[serverId];
+  else if (state.selected === serverId) setTimeout(() => refreshHealth(serverId), 0);
   const v = state.views[serverId];
   if (st === 'disconnected' && v) {
     v.files.entries = [];
@@ -530,6 +533,11 @@ function renderHeader() {
         h('h1', null, s.name),
         s.group ? h('span', { class: 'group-chip', title: `Group: ${s.group}` }, s.group) : null),
       h('div', { class: 'addr' }, `${s.username}@${s.host}:${s.port}`, jump ? h('span', { class: 'muted' }, `  via ${jump.name}`) : null)),
+    h('div', {
+      class: 'health', id: 'health', hidden: true, role: 'button', tabindex: '0',
+      onclick: () => refreshHealth(s.id, true),
+      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); refreshHealth(s.id, true); } },
+    }),
     h('div', { class: 'host-actions' },
       h('span', { class: `state-pill ${st}`, title: msg || '' }, h('span', { class: 'dot' }),
         { connected: 'Connected', connecting: 'Connecting…', error: 'Failed', disconnected: 'Not connected' }[st]),
@@ -538,7 +546,97 @@ function renderHeader() {
         : h('button', { class: 'btn small', disabled: st === 'connecting', onclick: () => connect(s.id).catch(() => {}) }, 'Connect'),
       h('button', { class: 'icon-btn', title: 'Server options', 'aria-label': 'Server options', onclick: (e) => serverMenu(e.currentTarget, s) }, icon(ICONS.more))),
   );
+  renderHealth();
 }
+
+// ---------------------------------------------------------------------------
+// Server health strip: disk, memory, load and uptime for the selected server,
+// read about every 30 seconds while it is connected. Never connects by itself.
+
+const HEALTH_EVERY = 30000;
+const healthBy = {}; // serverId -> { data, at, loading, unsupported }
+
+function fmtUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  const hr = Math.floor((sec % 86400) / 3600);
+  const min = Math.floor((sec % 3600) / 60);
+  if (d >= 1) return `${d} day${d === 1 ? '' : 's'}`;
+  if (hr >= 1) return `${hr} h ${min} min`;
+  return `${Math.max(1, min)} min`;
+}
+
+function renderHealth() {
+  const el = document.getElementById('health');
+  const id = state.selected;
+  if (!el) return;
+  el.textContent = '';
+  const hs = healthBy[id];
+  if (statusOf(id) !== 'connected' || !hs || !hs.data) { el.hidden = true; return; }
+  el.hidden = false;
+  const d = hs.data;
+  const level = (p) => (p >= 90 ? 'bad' : p >= 80 ? 'warn' : '');
+  const updated = `Updated ${new Date(hs.at).toLocaleTimeString()}. Click to refresh.`;
+  const stat = (cls, label, value, { pct, extra, tip }) => h('div', { class: `stat ${cls}`, title: `${tip}\n${updated}` },
+    h('span', { class: 'stat-label' }, label),
+    h('span', { class: 'stat-value' }, value,
+      pct !== undefined ? h('span', { class: 'bar' }, h('i', { style: { width: `${Math.min(100, Math.max(2, pct))}%` } })) : null,
+      extra ? h('span', { class: 'stat-extra' }, extra) : null));
+
+  if (d.disk) {
+    el.append(stat(`disk ${level(d.disk.percent)}`, d.disk.mount === '/' ? 'Disk' : `Disk ${d.disk.mount}`, `${d.disk.percent}%`, {
+      pct: d.disk.percent,
+      tip: `${fmtBytes(d.disk.used)} used of ${fmtBytes(d.disk.total)} on ${d.disk.mount}, ${fmtBytes(d.disk.available)} free`,
+    }));
+  }
+  if (d.memory) {
+    const swap = d.swap ? (d.swap.total ? `Swap: ${fmtBytes(d.swap.used)} used of ${fmtBytes(d.swap.total)}` : 'No swap') : '';
+    el.append(stat(`memory ${level(d.memory.percent)}`, 'Memory', `${d.memory.percent}%`, {
+      pct: d.memory.percent,
+      tip: `${fmtBytes(d.memory.used)} used of ${fmtBytes(d.memory.total)}, ${fmtBytes(d.memory.available)} available${swap ? `\n${swap}` : ''}`,
+    }));
+  }
+  if (d.load) {
+    const per = d.cpus ? d.load[0] / d.cpus : 0;
+    el.append(stat(`load ${per >= 2 ? 'bad' : per >= 1 ? 'warn' : ''}`, 'Load', d.load[0].toFixed(2), {
+      extra: d.cpus ? `${d.cpus} CPU${d.cpus === 1 ? '' : 's'}` : '',
+      tip: `Load average over 1, 5 and 15 minutes: ${d.load.map((n) => n.toFixed(2)).join(', ')}${d.cpus ? ` on ${d.cpus} CPU${d.cpus === 1 ? '' : 's'}` : ''}`,
+    }));
+  }
+  if (d.uptimeSec !== null) {
+    el.append(stat('uptime', 'Up', fmtUptime(d.uptimeSec), {
+      tip: `Running since ${new Date(hs.at - d.uptimeSec * 1000).toLocaleString()}`,
+    }));
+  }
+  el.setAttribute('aria-label', `Server health. ${[...el.querySelectorAll('.stat')].map((x) => x.textContent).join(', ')}. Press to refresh.`);
+}
+
+async function refreshHealth(id, force = false) {
+  const hs = healthBy[id] || (healthBy[id] = {});
+  if (hs.loading || statusOf(id) !== 'connected' || (hs.unsupported && !force)) return;
+  hs.loading = true;
+  try {
+    const data = await api.call('ssh:health', id);
+    if (data.uptimeSec === null && !data.load && !data.memory && !data.disk) hs.unsupported = true;
+    else { hs.data = data; hs.at = Date.now(); hs.unsupported = false; }
+  } catch (_) {
+    // Keep the last values; the next round tries again.
+  } finally {
+    hs.loading = false;
+  }
+  if (state.selected === id) renderHealth();
+}
+
+function refreshHealthIfStale(id) {
+  const hs = healthBy[id];
+  if (id && statusOf(id) === 'connected' && (!hs || !hs.at || Date.now() - hs.at > HEALTH_EVERY - 2000)) refreshHealth(id);
+}
+
+setInterval(() => {
+  if (document.visibilityState === 'visible') refreshHealthIfStale(state.selected);
+}, 5000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshHealthIfStale(state.selected);
+});
 
 function renderPane() {
   const pane = document.getElementById('pane');

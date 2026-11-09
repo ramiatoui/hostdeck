@@ -315,6 +315,7 @@ function registerIpc() {
   handle('ssh:connect', (serverId) => ssh.connect(serverId));
   handle('ssh:disconnect', (serverId) => ssh.disconnect(serverId));
   handle('ssh:connected', () => ssh.connectedIds());
+  handle('ssh:health', (serverId) => ssh.health(serverId));
   handle('exec:run', (serverId, command, opts) => ssh.exec(serverId, command, opts));
   handle('exec:cancel', (runId) => ssh.cancelExec(runId));
   handle('shell:open', (serverId, size) => ssh.openShell(serverId, size));

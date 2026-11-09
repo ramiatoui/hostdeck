@@ -11,6 +11,7 @@ Save your servers once, then pick one, type a command and hit **Run**. Keep the 
 ## Features
 
 - **Run** commands and see live output, errors, exit code and duration. Per-server history, snippets, a working folder, and a confirmation before destructive commands.
+- **Server health** in the header while connected: disk, memory, load and uptime, refreshed every 30 seconds.
 - **Terminal**: a full interactive shell (xterm.js) for vim, htop and long sessions.
 - **Browser**: open web pages through the server's SSH connection, so `localhost:8080` is the server's localhost. Admin tools kept off the internet (phpMyAdmin, pgAdmin, dashboards) open directly; listening ports are suggested.
 - **Files**: SFTP browser with drag-and-drop upload, folder download, rename, permissions, delete, search in the folder or all subfolders, and an editor with syntax highlighting that won't overwrite changes made on the server without asking.
