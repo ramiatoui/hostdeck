@@ -19,6 +19,8 @@ Save your servers once, then pick one, type a command and hit **Run**. Keep the 
 - **Host key verification**: trust on first use, with a clear warning if a key changes.
 - **Import** hosts from `~/.ssh/config`, and export your server list (without secrets) to another computer.
 
+See the [roadmap](ROADMAP.md) for what's coming next.
+
 ## Where your data lives
 
 One JSON file in your user folder (`~/.config/Hostdeck` on Linux, `~/Library/Application Support/Hostdeck` on macOS, `%APPDATA%\Hostdeck` on Windows). Passwords, pasted keys and passphrases are encrypted with the OS keychain (macOS Keychain, Windows DPAPI, Linux secret service). Key files are referenced by path, never copied.
