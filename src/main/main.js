@@ -3,8 +3,9 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, Menu, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, Menu, nativeTheme, session, webContents, powerMonitor } = require('electron');
 const { Store } = require('./store');
+const { AppLock } = require('./lock');
 const { SshManager } = require('./ssh');
 const { readDefaultSshConfig } = require('./sshconfig');
 
@@ -15,6 +16,7 @@ const ROOT = path.join(__dirname, '..', '..');
 let win = null;
 let store = null;
 let ssh = null;
+let appLock = null;
 const pendingPrompts = new Map();
 
 if (!app.requestSingleInstanceLock()) {
@@ -96,14 +98,81 @@ function resolveAllPrompts() {
 }
 
 /** Register an IPC handler that returns {ok, value} or {ok:false, error}. */
+// While the app is locked, only these requests are answered.
+const ALLOWED_WHILE_LOCKED = new Set(['app:info', 'lock:status', 'lock:unlock', 'lock:reset', 'lock:now']);
+
 function handle(channel, fn) {
   ipcMain.handle(channel, async (_event, ...args) => {
+    if (appLock && appLock.locked && !ALLOWED_WHILE_LOCKED.has(channel)) {
+      return { ok: false, error: { message: 'Hostdeck is locked.', code: 'LOCKED' } };
+    }
     try {
       return { ok: true, value: await fn(...args) };
     } catch (err) {
       return { ok: false, error: { message: err.message || String(err), code: err.code || null } };
     }
   });
+}
+
+// ---- zoom ------------------------------------------------------------------
+// Ctrl/Cmd with = or +, - and 0 (main row or numpad) zoom whatever has focus:
+// the app itself, or the web page in the Browser tab.
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+function nextZoom(current, dir) {
+  if (dir === 0) return 1;
+  if (dir > 0) return ZOOM_STEPS.find((z) => z > current + 0.001) || ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  return [...ZOOM_STEPS].reverse().find((z) => z < current - 0.001) || ZOOM_STEPS[0];
+}
+
+function zoomKey(input) {
+  const mod = process.platform === 'darwin' ? input.meta : input.control;
+  if (!mod || input.alt) return null;
+  const { key, code } = input;
+  if (key === '=' || key === '+' || code === 'Equal' || code === 'NumpadAdd') return 1;
+  if (key === '-' || key === '_' || code === 'Minus' || code === 'NumpadSubtract') return -1;
+  if (!input.shift && (key === '0' || code === 'Digit0' || code === 'Numpad0')) return 0;
+  return null;
+}
+
+function applyZoom(contents, dir) {
+  const isPage = contents.getType() === 'webview';
+  const next = nextZoom(contents.getZoomFactor(), dir);
+  contents.setZoomFactor(next);
+  if (!isPage) store.updateSettings({ uiZoom: next });
+  send('zoom', { target: isPage ? 'page' : 'app', percent: Math.round(next * 100) });
+}
+
+function zoomFocused(dir) {
+  const focused = webContents.getFocusedWebContents();
+  const target = focused && (focused === (win && win.webContents) || focused.getType() === 'webview') ? focused : win && win.webContents;
+  if (target) applyZoom(target, dir);
+}
+
+// ---- app lock --------------------------------------------------------------
+
+function pick(obj, keys) {
+  return Object.fromEntries(keys.map((k) => [k, obj[k]]));
+}
+
+function lockNow() {
+  if (appLock && !appLock.locked && appLock.lock()) send('lock', { locked: true });
+}
+
+function lockFromShortcut() {
+  if (appLock && appLock.enabled) lockNow();
+  else send('menu', 'lock-setup');
+}
+
+function startAutoLock() {
+  // Idle time is system-wide, so typing in a web page or terminal counts too.
+  setInterval(() => {
+    const minutes = Number(store.getSettings().autoLockMinutes) || 0;
+    if (appLock.enabled && !appLock.locked && minutes > 0 && powerMonitor.getSystemIdleTime() >= minutes * 60) lockNow();
+  }, 10000);
+  for (const ev of ['lock-screen', 'suspend']) {
+    powerMonitor.on(ev, () => { if (store.getSettings().lockOnSleep) lockNow(); });
+  }
 }
 
 function createWindow() {
@@ -128,6 +197,17 @@ function createWindow() {
     },
   });
   win.once('ready-to-show', () => win.show());
+  win.webContents.on('did-finish-load', () => {
+    const z = Number(store.getSettings().uiZoom) || 1;
+    if (z !== 1) win.webContents.setZoomFactor(z);
+  });
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const dir = zoomKey(input);
+    if (dir === null) return;
+    event.preventDefault();
+    applyZoom(win.webContents, dir);
+  });
   // The UI blocks unload while a file has unsaved edits; ask instead of
   // silently refusing to close.
   win.webContents.on('will-prevent-unload', (event) => {
@@ -159,6 +239,7 @@ function buildMenu() {
         { label: 'Import from SSH config', click: () => send('menu', 'import-ssh-config') },
         { type: 'separator' },
         { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => send('menu', 'settings') },
+        { label: 'Lock Hostdeck', accelerator: 'CmdOrCtrl+Shift+L', click: () => lockFromShortcut() },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
@@ -167,9 +248,11 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        // Keys are handled in before-input-event so they also work while a
+        // web page in the Browser tab has focus; the menu only shows them.
+        { label: 'Actual size', accelerator: 'CmdOrCtrl+0', registerAccelerator: false, click: () => zoomFocused(0) },
+        { label: 'Zoom in', accelerator: 'CmdOrCtrl+=', registerAccelerator: false, click: () => zoomFocused(1) },
+        { label: 'Zoom out', accelerator: 'CmdOrCtrl+-', registerAccelerator: false, click: () => zoomFocused(-1) },
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { role: 'toggleDevTools' },
@@ -207,6 +290,7 @@ function registerIpc() {
     return shell.openExternal(url);
   });
   handle('app:showDataFolder', () => shell.showItemInFolder(store.file));
+  handle('app:fullscreen', () => { if (win) win.setFullScreen(!win.isFullScreen()); });
 
   // Servers
   handle('servers:list', () => store.listServers());
@@ -321,7 +405,39 @@ function registerIpc() {
   handle('shell:open', (serverId, size) => ssh.openShell(serverId, size));
   handle('shell:resize', (shellId, cols, rows) => ssh.resizeShell(shellId, cols, rows));
   handle('shell:close', (shellId) => ssh.closeShell(shellId));
-  ipcMain.on('shell:write', (_e, shellId, data) => ssh.writeShell(shellId, data));
+  ipcMain.on('shell:write', (_e, shellId, data) => { if (!appLock.locked) ssh.writeShell(shellId, data); });
+
+  // App lock
+  handle('lock:status', () => ({ ...appLock.status(), ...pick(store.getSettings(), ['autoLockMinutes', 'lockOnSleep']) }));
+  handle('lock:unlock', (pin) => {
+    const res = appLock.unlock(pin);
+    if (res.ok) send('lock', { locked: false });
+    return res;
+  });
+  handle('lock:now', () => { lockNow(); return appLock.status(); });
+  handle('lock:set', (pin, current) => { appLock.setPin(pin, current); return appLock.status(); });
+  handle('lock:disable', (current) => { appLock.disable(current); return appLock.status(); });
+  handle('lock:reset', async () => {
+    ssh.disconnectAll();
+    for (const s of store.listServers()) await clearBrowserData(s.id);
+    appLock.reset();
+    send('lock', { locked: false });
+    return appLock.status();
+  });
+
+  // Saved logins for the Browser tab
+  handle('logins:list', (serverId, origin) => store.listLogins(serverId, origin));
+  handle('logins:all', () => store.allLogins());
+  handle('logins:password', (serverId, origin, id) => store.getLoginPassword(serverId, origin, id));
+  handle('logins:check', async (serverId, origin, username, password) => ({
+    saved: await store.hasLogin(serverId, origin, username, password),
+    exists: store.listLogins(serverId, origin).some((l) => l.username === String(username || '')),
+    never: store.isNeverSave(serverId, origin),
+    canStore: store.securityInfo().encrypted,
+  }));
+  handle('logins:save', (serverId, origin, username, password) => store.saveLogin(serverId, origin, username, password));
+  handle('logins:delete', (serverId, origin, id) => store.deleteLogin(serverId, origin, id));
+  handle('logins:never', (serverId, origin) => store.neverSaveFor(serverId, origin));
 
   // Browser
   handle('browser:open', (serverId) => openBrowserSession(serverId));
@@ -375,6 +491,12 @@ app.on('web-contents-created', (_e, contents) => {
     // Pages swallow key presses, so pass the app's shortcuts back to the UI.
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
+      const zoomDir = zoomKey(input);
+      if (zoomDir !== null) {
+        event.preventDefault();
+        applyZoom(contents, zoomDir);
+        return;
+      }
       const mod = process.platform === 'darwin' ? input.meta : input.control;
       const key = input.key.toLowerCase();
       let action = null;
@@ -383,6 +505,17 @@ app.on('web-contents-created', (_e, contents) => {
       else if (input.alt && input.key === 'ArrowLeft') action = 'back';
       else if (input.alt && input.key === 'ArrowRight') action = 'forward';
       else if (mod && !input.shift && ['1', '2', '3', '4'].includes(input.key)) action = `tab${input.key}`;
+      else if (mod && input.shift && key === 'f') action = 'focus';
+      else if (mod && input.shift && key === 'l') {
+        event.preventDefault();
+        lockFromShortcut();
+        return;
+      }
+      else if (input.key === 'F11' && process.platform !== 'darwin') {
+        event.preventDefault();
+        if (win) win.setFullScreen(!win.isFullScreen());
+        return;
+      }
       if (!action) return;
       const serverId = serverIdForContents(contents);
       if (!serverId) return;
@@ -404,7 +537,8 @@ app.on('web-contents-created', (_e, contents) => {
       event.preventDefault();
       return;
     }
-    delete webPreferences.preload;
+    // Only our own small preload (sign-in capture and fill), never one from the page.
+    webPreferences.preload = path.join(ROOT, 'src', 'webview-preload.js');
     webPreferences.nodeIntegration = false;
     webPreferences.nodeIntegrationInSubFrames = false;
     webPreferences.contextIsolation = true;
@@ -451,6 +585,8 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   store = new Store({ dir: app.getPath('userData'), cipher: await cipher() });
   ssh = new SshManager({ store, prompt });
+  appLock = new AppLock(store);
+  startAutoLock();
   registerIpc();
   buildMenu();
   createWindow();

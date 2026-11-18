@@ -69,6 +69,8 @@ const ICONS = {
   up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
   forward: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   more: '<circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/>',
@@ -230,6 +232,7 @@ function inputDialog({ title, desc, label, value = '', confirm = 'Save', mono = 
 }
 
 document.addEventListener('keydown', (e) => {
+  if (state.locked) return;
   if (e.key === 'Escape') {
     if (openMenuEl) return closeMenu();
     const top = modalStack[modalStack.length - 1];
@@ -334,7 +337,14 @@ async function refreshServers() {
   renderDeck();
 }
 
+async function start() {
+  const st = await api.call('lock:status');
+  if (st.locked) showLock();
+  else await init();
+}
+
 async function init() {
+  state.started = true;
   const [info, settings, snippets, connected] = await Promise.all([
     api.call('app:info'), api.call('settings:get'), api.call('snippets:list'), api.call('ssh:connected'),
   ]);
@@ -480,7 +490,24 @@ api.on('status', ({ serverId, state: st, message }) => {
 // ---------------------------------------------------------------------------
 // main area
 
+// Focus mode: in the Browser tab, hide the sidebar, server header and tabs so
+// the page gets the whole window. Other tabs always show the normal layout.
+let slotObserver = null;
+
+function applyFocusMode() {
+  const v = state.selected && state.views[state.selected];
+  document.body.classList.toggle('focus-browser', Boolean(state.focusMode && v && v.tab === 'browser'));
+}
+
+function toggleFocusMode() {
+  state.focusMode = !state.focusMode;
+  renderMain();
+  requestAnimationFrame(placeBrowsers);
+  toast(state.focusMode ? `Focus mode. ${MOD}+Shift+F shows the sidebar and tabs again.` : 'Sidebar and tabs are back.');
+}
+
 function renderMain() {
+  applyFocusMode();
   const main = document.getElementById('main');
   main.textContent = '';
   const s = serverById(state.selected);
@@ -978,11 +1005,27 @@ function renderBrowser(pane) {
     b.loading
       ? h('button', { class: 'icon-btn', title: 'Stop', 'aria-label': 'Stop', onclick: () => b.wv.stop() }, icon(ICONS.close))
       : h('button', { class: 'icon-btn', title: `Reload (${MOD}+R)`, 'aria-label': 'Reload', disabled: b.start || !b.wv, onclick: () => reloadBrowser(id) }, icon(ICONS.refresh)),
-    h('label', { class: 'address-box' }, h('span', { class: 'via', title: `Pages load through ${s.name}. localhost is the server.` }, `via ${s.name}`), address),
+    h('div', { class: 'address-box' },
+      h('span', { class: 'via', title: `Pages load through ${s.name}. localhost is the server.` }, `via ${s.name}`), address,
+      h('button', {
+        class: `key-btn${b.logins && b.logins.length ? ' has' : ''}`, id: 'key-btn', type: 'button',
+        hidden: b.start || !((b.logins && b.logins.length) || b.hasLoginForm),
+        title: 'Saved passwords for this site', 'aria-label': 'Saved passwords for this site',
+        onclick: (e) => loginMenu(e.currentTarget, id),
+      }, icon(KEY_ICON), h('span', { class: 'key-count' }, b.logins && b.logins.length ? String(b.logins.length) : ''))),
+    h('button', {
+      class: `icon-btn${state.focusMode ? ' on' : ''}`, 'aria-pressed': String(Boolean(state.focusMode)),
+      title: state.focusMode ? `Show the sidebar and tabs (${MOD}+Shift+F)` : `Give the page the whole window (${MOD}+Shift+F)`,
+      'aria-label': state.focusMode ? 'Exit focus mode' : 'Focus mode', onclick: toggleFocusMode,
+    }, icon(state.focusMode ? ICONS.collapse : ICONS.expand)),
     h('button', { class: 'icon-btn', title: 'Browser options', 'aria-label': 'Browser options', onclick: (e) => browserMenu(e.currentTarget, id) }, icon(ICONS.more)));
   pane.append(toolbar, h('div', { class: 'browser-progress', hidden: !b.loading }));
+  if (b.savePrompt && st === 'connected' && !b.start) pane.append(renderSaveBar(id));
 
   const slot = h('div', { class: 'browser-slot', id: 'browser-slot' });
+  if (slotObserver) slotObserver.disconnect();
+  slotObserver = new ResizeObserver(() => placeBrowsers());
+  slotObserver.observe(slot);
   pane.append(slot);
 
   if (st !== 'connected') {
@@ -1103,6 +1146,12 @@ function browserMenu(anchor, id) {
   showMenu(anchor, [
     { label: 'Start page', run: () => showStart(id) },
     { label: 'Copy address', run: () => { navigator.clipboard.writeText(b.url || ''); toast('Address copied.'); } },
+    { label: 'Zoom in', run: () => zoomPage(id, 1) },
+    { label: 'Zoom out', run: () => zoomPage(id, -1) },
+    { label: `Actual size${b.wv && b.ready && Math.abs(b.wv.getZoomFactor() - 1) > 0.01 ? ` (now ${Math.round(b.wv.getZoomFactor() * 100)}%)` : ''}`, run: () => zoomPage(id, 0) },
+    { label: state.focusMode ? 'Exit focus mode' : 'Focus mode', run: toggleFocusMode },
+    { label: 'Full screen (F11)', run: () => api.call('app:fullscreen') },
+    '-',
     { label: 'Developer tools', run: () => { if (b.wv && b.ready) b.wv.openDevTools(); } },
     '-',
     { label: 'Clear cookies and site data', danger: true, run: async () => {
@@ -1125,6 +1174,18 @@ async function reconnectBrowser(id) {
   }
   if (b.wv && !b.start) reloadBrowser(id);
   else if (state.selected === id) renderPane();
+}
+
+const PAGE_ZOOM = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+function zoomPage(id, dir) {
+  const b = browserState(id);
+  if (!b.wv || !b.ready) return;
+  const cur = b.wv.getZoomFactor();
+  const next = dir === 0 ? 1 : dir > 0
+    ? (PAGE_ZOOM.find((z) => z > cur + 0.001) || PAGE_ZOOM[PAGE_ZOOM.length - 1])
+    : ([...PAGE_ZOOM].reverse().find((z) => z < cur - 0.001) || PAGE_ZOOM[0]);
+  b.wv.setZoomFactor(next);
+  toast(`Page zoom ${Math.round(next * 100)}%`);
 }
 
 function reloadBrowser(id) {
@@ -1158,6 +1219,124 @@ async function goTo(id, input) {
   if (state.selected === id && view(id).tab === 'browser') renderPane();
 }
 
+// ---- saved passwords for sites in the Browser tab
+const KEY_ICON = '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3M16.5 6.5l3 3M14 9l2.5 2.5"/>';
+
+function originOf(url) {
+  try { return new URL(url).origin; } catch (_) { return ''; }
+}
+
+function updateKeyButton(id) {
+  if (state.selected !== id || view(id).tab !== 'browser') return;
+  const btn = document.getElementById('key-btn');
+  if (!btn) return;
+  const b = browserState(id);
+  const n = b.logins ? b.logins.length : 0;
+  btn.hidden = b.start || !(n || b.hasLoginForm);
+  btn.classList.toggle('has', n > 0);
+  btn.querySelector('.key-count').textContent = n ? String(n) : '';
+}
+
+async function refreshLogins(id) {
+  const b = browserState(id);
+  const origin = originOf(b.url);
+  try {
+    b.logins = origin ? await api.call('logins:list', id, origin) : [];
+  } catch (_) {
+    b.logins = [];
+  }
+  updateKeyButton(id);
+}
+
+async function onLoginFields(id, info) {
+  const b = browserState(id);
+  if (!info || info.origin !== originOf(b.url)) return;
+  b.hasLoginForm = info.hasLogin;
+  await refreshLogins(id);
+  // One saved login for this site and an empty sign-in form: fill it in.
+  if (info.hasLogin && b.logins.length === 1 && b.autofilledFor !== b.url) {
+    b.autofilledFor = b.url;
+    fillLogin(id, b.logins[0], true);
+  }
+}
+
+async function fillLogin(id, login, quiet) {
+  const b = browserState(id);
+  const origin = originOf(b.url);
+  try {
+    const password = await api.call('logins:password', id, origin, login.id);
+    b.wv.send('hd:fill', { origin, username: login.username, password });
+    if (!quiet) toast(`Filled the saved login${login.username ? ` for ${login.username}` : ''}.`);
+  } catch (err) {
+    showError(err, 'Could not fill the login');
+  }
+}
+
+async function onLoginCaptured(id, data) {
+  const b = browserState(id);
+  if (!data || !data.password || data.origin !== originOf(b.url)) return;
+  let check;
+  try { check = await api.call('logins:check', id, data.origin, data.username, data.password); } catch (_) { return; }
+  if (check.saved || check.never) return;
+  if (!check.canStore) {
+    if (!state.warnedNoKeyring) {
+      state.warnedNoKeyring = true;
+      toast('Hostdeck cannot save this password: no system keyring is available on this computer to encrypt it.', 'error');
+    }
+    return;
+  }
+  b.savePrompt = { origin: data.origin, username: data.username, password: data.password, update: check.exists };
+  if (state.selected === id && view(id).tab === 'browser') renderPane();
+}
+
+function renderSaveBar(id) {
+  const b = browserState(id);
+  const sp = b.savePrompt;
+  const host = sp.origin.replace(/^https?:\/\//, '');
+  const done = () => { b.savePrompt = null; renderPane(); };
+  return h('div', { class: 'save-bar', role: 'status' },
+    icon(KEY_ICON),
+    h('span', { class: 'grow' },
+      h('b', null, sp.update ? `Update the saved password for ${sp.username || 'this site'}?` : `Save the password for ${sp.username || 'this site'}?`),
+      h('span', { class: 'muted' }, ` ${host} via ${serverById(id).name}. Stored encrypted on this computer.`)),
+    h('button', { class: 'btn small', onclick: async () => { await api.call('logins:never', id, sp.origin); done(); } }, 'Never for this site'),
+    h('button', { class: 'btn small', onclick: done }, 'Not now'),
+    h('button', { class: 'btn small primary', onclick: async () => {
+      try {
+        await api.call('logins:save', id, sp.origin, sp.username, sp.password);
+        toast(sp.update ? 'Saved password updated.' : 'Password saved. Use the key in the address bar to fill it next time.');
+      } catch (err) {
+        showError(err, 'Could not save the password');
+      }
+      done();
+      refreshLogins(id);
+    } }, sp.update ? 'Update' : 'Save'));
+}
+
+function loginMenu(anchor, id) {
+  const b = browserState(id);
+  const list = b.logins || [];
+  const items = [];
+  if (!list.length) items.push({ label: 'No saved passwords for this site yet. Sign in and Hostdeck offers to save it.', run: () => {} });
+  for (const l of list) {
+    const who = l.username || '(no username)';
+    items.push({ label: `Fill ${who}`, run: () => fillLogin(id, l) });
+  }
+  if (list.length) {
+    items.push('-');
+    for (const l of list) {
+      items.push({ label: `Copy password for ${l.username || '(no username)'}`, run: async () => {
+        try {
+          await navigator.clipboard.writeText(await api.call('logins:password', id, originOf(b.url), l.id));
+          toast('Password copied.');
+        } catch (err) { showError(err, 'Could not copy'); }
+      } });
+    }
+  }
+  items.push('-', { label: 'Manage saved passwords…', run: () => openSettings() });
+  showMenu(anchor, items);
+}
+
 function createWebview(id, url) {
   const b = browserState(id);
   const wv = document.createElement('webview');
@@ -1183,7 +1362,19 @@ function createWebview(id, url) {
   wv.addEventListener('dom-ready', () => { b.ready = true; syncBar(); });
   wv.addEventListener('did-start-loading', () => { b.loading = true; refresh(); });
   wv.addEventListener('did-stop-loading', () => { b.loading = false; refresh(); });
-  wv.addEventListener('did-navigate', (e) => { b.url = e.url; if (!b.cert) b.error = null; syncBar(); });
+  wv.addEventListener('did-navigate', (e) => {
+    b.url = e.url;
+    if (!b.cert) b.error = null;
+    b.hasLoginForm = false;
+    b.autofilledFor = null; // each visit to a sign-in page gets filled again
+    if (b.savePrompt && b.savePrompt.origin !== originOf(e.url)) b.savePrompt = null;
+    syncBar();
+    refreshLogins(id);
+  });
+  wv.addEventListener('ipc-message', (e) => {
+    if (e.channel === 'hd:login') onLoginCaptured(id, e.args[0]);
+    else if (e.channel === 'hd:fields') onLoginFields(id, e.args[0]);
+  });
   wv.addEventListener('did-navigate-in-page', (e) => { if (e.isMainFrame) { b.url = e.url; syncBar(); } });
   wv.addEventListener('page-title-updated', (e) => { b.title = e.title; });
   wv.addEventListener('did-fail-load', (e) => {
@@ -1227,11 +1418,16 @@ api.on('browser:download', ({ state: st, file, name }) => {
   if (st === 'completed') toast(h('span', null, `Downloaded ${name}. `, h('button', { class: 'text-btn', onclick: () => api.call('sftp:reveal', file) }, 'Show in folder')));
   else if (st === 'interrupted') toast(`Download of ${name} failed.`, 'error');
 });
+api.on('zoom', ({ target, percent }) => {
+  toast(`${target === 'page' ? 'Page zoom' : 'Zoom'} ${percent}%`);
+  setTimeout(placeBrowsers, 50);
+});
 api.on('browser:key', ({ serverId, action }) => {
   if (state.selected !== serverId) return;
   const b = state.views[serverId] && state.views[serverId].browser;
   if (action.startsWith('tab')) return setTab(['run', 'terminal', 'files', 'browser'][Number(action.slice(3)) - 1]);
   if (!b || !b.wv) return;
+  if (action === 'focus') return toggleFocusMode();
   if (action === 'address') { const a = document.getElementById('address'); if (a) a.focus(); }
   if (action === 'reload') reloadBrowser(serverId);
   if (action === 'back' && b.wv.canGoBack()) b.wv.goBack();
@@ -1941,7 +2137,41 @@ async function importSshConfig() {
 // Settings
 
 async function openSettings() {
-  const [settings, hosts] = await Promise.all([api.call('settings:get'), api.call('hosts:list')]);
+  const [settings, hosts, lockSt, logins] = await Promise.all([api.call('settings:get'), api.call('hosts:list'), api.call('lock:status'), api.call('logins:all')]);
+  // App lock
+  const autoLock = h('select', { id: 'auto-lock' }, [[5, 'After 5 minutes idle'], [15, 'After 15 minutes idle'], [30, 'After 30 minutes idle'], [60, 'After 1 hour idle'], [0, 'Only when I lock it']].map(([v, l]) => h('option', { value: String(v), selected: Number(settings.autoLockMinutes) === v }, l)));
+  const lockSleep = h('input', { type: 'checkbox', id: 'lock-sleep', checked: Boolean(settings.lockOnSleep) });
+  const lockBox = h('div');
+  const drawLockBox = (enabled) => {
+    lockBox.textContent = '';
+    if (!enabled) {
+      lockBox.append(
+        h('p', { class: 'muted', style: { margin: '0 0 10px', fontSize: '13px' } }, `Ask for a PIN when Hostdeck opens, after it sits idle, and when you press ${MOD}+Shift+L.`),
+        h('button', { class: 'btn small', onclick: async () => { if (await pinDialog('set')) drawLockBox(true); } }, 'Set a PIN…'));
+      return;
+    }
+    lockBox.append(
+      h('label', { class: 'field' }, h('span', null, 'Lock automatically'), autoLock, h('small', null, 'Idle means no typing or mouse use anywhere on this computer.')),
+      h('label', { class: 'check', style: { marginBottom: '12px' } }, lockSleep, 'Also lock when the computer sleeps or its screen locks'),
+      h('div', { class: 'inline', style: { flexWrap: 'wrap' } },
+        h('button', { class: 'btn small', onclick: () => pinDialog('change') }, 'Change PIN…'),
+        h('button', { class: 'btn small danger', onclick: async () => { if (await pinDialog('remove')) drawLockBox(false); } }, 'Remove PIN…'),
+        h('button', { class: 'btn small', onclick: () => { m.close(); api.call('lock:now'); } }, `Lock now (${MOD}+Shift+L)`)));
+  };
+  drawLockBox(lockSt.enabled);
+
+  // Saved browser passwords
+  const loginBox = h('div', { class: 'list-box' });
+  const drawLogins = (list) => {
+    loginBox.textContent = '';
+    if (!list.length) loginBox.append(h('div', { class: 'item muted' }, 'No saved passwords. When you sign in to a site in the Browser tab, Hostdeck offers to save it.'));
+    for (const l of list) {
+      loginBox.append(h('div', { class: 'item' },
+        h('span', { class: 'grow' }, h('span', { class: 'mono' }, l.origin.replace(/^https?:\/\//, '')), h('span', { class: 'muted' }, `  ${l.username || '(no username)'} · via ${l.serverName || 'deleted server'}`)),
+        h('button', { class: 'btn small', onclick: async () => { await api.call('logins:delete', l.serverId, l.origin, l.id); drawLogins(await api.call('logins:all')); } }, 'Delete')));
+    }
+  };
+  drawLogins(logins);
   const info = state.info;
   const theme = h('select', null, [['system', 'Match system'], ['dark', 'Dark'], ['light', 'Light']].map(([v, l]) => h('option', { value: v, selected: settings.theme === v }, l)));
   const keep = h('input', { type: 'checkbox', checked: settings.keepOpenByDefault });
@@ -1973,6 +2203,10 @@ async function openSettings() {
       h('label', { class: 'check', style: { marginBottom: '10px' } }, keep, 'Keep connections open after running a command'),
       h('label', { class: 'check', style: { marginBottom: '14px' } }, risky, 'Ask before running commands that look destructive (rm -rf /, reboot, mkfs…)'),
       h('label', { class: 'field' }, h('span', null, 'SSH agent path'), agent, h('small', null, 'Leave empty to use the default agent.')),
+      h('div', { class: 'section-title' }, 'App lock'),
+      lockBox,
+      h('div', { class: 'section-title' }, 'Saved browser passwords'),
+      loginBox,
       h('div', { class: 'section-title' }, 'Trusted host keys'),
       hostList,
       h('div', { class: 'section-title' }, 'Your data'),
@@ -1989,11 +2223,64 @@ async function openSettings() {
     foot: [
       h('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
       h('button', { class: 'btn primary', onclick: async () => {
-        state.settings = await api.call('settings:update', { theme: theme.value, keepOpenByDefault: keep.checked, confirmDangerous: risky.checked, agentPath: agent.value.trim() });
+        state.settings = await api.call('settings:update', {
+          theme: theme.value, keepOpenByDefault: keep.checked, confirmDangerous: risky.checked, agentPath: agent.value.trim(),
+          autoLockMinutes: Number(autoLock.value), lockOnSleep: lockSleep.checked,
+        });
         applyTheme();
         m.close();
       } }, 'Save settings'),
     ],
+  });
+}
+
+// Set, change or remove the PIN. Resolves true when it worked.
+function pinDialog(mode) {
+  return new Promise((resolve) => {
+    const field = (label, id) => {
+      const input = h('input', { id, type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '12' });
+      return [input, h('label', { class: 'field' }, h('span', null, label), input)];
+    };
+    const [current, currentField] = field('Current PIN', 'pin-current');
+    const [next, nextField] = field('New PIN', 'pin-new');
+    const [again, againField] = field('New PIN again', 'pin-again');
+    const err = h('p', { class: 'muted', role: 'alert', style: { color: 'var(--danger)', margin: '0' } });
+    let m;
+    const submit = async () => {
+      err.textContent = '';
+      try {
+        if (mode === 'remove') {
+          await api.call('lock:disable', current.value);
+          toast('PIN removed. Hostdeck no longer locks.');
+        } else {
+          if (!/^\d{4,12}$/.test(next.value)) throw new Error('The PIN must be 4 to 12 digits.');
+          if (next.value !== again.value) throw new Error('The two new PINs are different.');
+          await api.call('lock:set', next.value, mode === 'change' ? current.value : undefined);
+          toast(mode === 'set' ? `PIN set. Press ${MOD}+Shift+L to lock Hostdeck.` : 'PIN changed.');
+        }
+        m.close();
+        resolve(true);
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    };
+    const body = [
+      mode === 'set' ? h('p', { class: 'muted', style: { marginTop: '0', fontSize: '13px' } }, 'Use 4 to 12 digits. It cannot be recovered: if you forget it, removing the lock also deletes saved passwords and keys.') : null,
+      mode !== 'set' ? currentField : null,
+      mode !== 'remove' ? nextField : null,
+      mode !== 'remove' ? againField : null,
+      err,
+    ];
+    m = openModal({
+      title: { set: 'Set a PIN', change: 'Change PIN', remove: 'Remove PIN' }[mode],
+      body,
+      onCancel: () => resolve(false),
+      foot: [
+        h('button', { class: 'btn', onclick: () => { m.close(); resolve(false); } }, 'Cancel'),
+        h('button', { class: `btn ${mode === 'remove' ? 'danger solid' : 'primary'}`, onclick: submit }, { set: 'Set PIN', change: 'Change PIN', remove: 'Remove PIN' }[mode]),
+      ],
+    });
+    for (const input of [current, next, again]) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
   });
 }
 
@@ -2003,9 +2290,132 @@ async function openSettings() {
 document.getElementById('add-server').addEventListener('click', () => editServer());
 document.getElementById('open-import').addEventListener('click', importSshConfig);
 document.getElementById('open-settings').addEventListener('click', openSettings);
+document.getElementById('lock-app').addEventListener('click', lockFromUi);
 document.getElementById('search').addEventListener('input', (e) => { state.query = e.target.value; renderDeck(); });
 
+
+// ---------------------------------------------------------------------------
+// App lock: optional PIN. The main process refuses requests while locked, so
+// this screen is the only thing that works until the PIN is entered.
+
+const LOCK_ICON = '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
+const LOCK_LAYERS = ['app', 'modal-root', 'browser-layer', 'toasts'];
+
+function showLock() {
+  state.locked = true;
+  closeMenu();
+  for (const id of LOCK_LAYERS) {
+    const el = document.getElementById(id);
+    if (el) el.inert = true;
+  }
+  document.body.classList.add('locked');
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  let el = document.getElementById('lock');
+  if (el) el.remove();
+  el = h('div', { id: 'lock', class: 'lock', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Hostdeck is locked' });
+  document.body.append(el);
+  drawUnlock(el);
+}
+
+function drawUnlock(el) {
+  el.textContent = '';
+  const input = h('input', { id: 'lock-pin', type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '12', 'aria-label': 'PIN', placeholder: 'PIN' });
+  const msg = h('p', { class: 'lock-msg', role: 'alert' });
+  const button = h('button', { class: 'btn primary', type: 'submit' }, 'Unlock');
+  let timer = null;
+  const wait = (seconds) => {
+    clearInterval(timer);
+    input.disabled = true;
+    button.disabled = true;
+    let left = seconds;
+    const tick = () => {
+      if (left <= 0) {
+        clearInterval(timer);
+        input.disabled = false;
+        button.disabled = false;
+        msg.textContent = '';
+        input.focus();
+        return;
+      }
+      msg.textContent = `Too many wrong PINs. Try again in ${left} s.`;
+      left -= 1;
+    };
+    tick();
+    timer = setInterval(tick, 1000);
+  };
+  const form = h('form', {
+    class: 'lock-form',
+    onsubmit: async (e) => {
+      e.preventDefault();
+      if (!input.value) { input.focus(); return; }
+      const res = await api.call('lock:unlock', input.value);
+      input.value = '';
+      if (res.ok) { hideLock(); return; }
+      if (res.waitSeconds) wait(res.waitSeconds);
+      else msg.textContent = res.attemptsLeft ? `Wrong PIN. ${res.attemptsLeft} ${res.attemptsLeft === 1 ? 'try' : 'tries'} left before a short wait.` : 'Wrong PIN.';
+      input.focus();
+    },
+  }, input, button);
+  el.append(h('div', { class: 'lock-card' },
+    h('div', { class: 'lock-mark' }, icon(LOCK_ICON)),
+    h('h1', null, 'Hostdeck is locked'),
+    h('p', { class: 'muted' }, 'Enter your PIN to continue. Connections and terminals keep running in the background.'),
+    form, msg,
+    h('button', { class: 'text-btn', type: 'button', onclick: () => drawForgot(el) }, 'Forgot your PIN?')));
+  api.call('lock:status').then((st) => { if (st.waitSeconds) wait(st.waitSeconds); });
+  setTimeout(() => input.focus(), 0);
+}
+
+function drawForgot(el) {
+  el.textContent = '';
+  el.append(h('div', { class: 'lock-card' },
+    h('div', { class: 'lock-mark warn' }, icon(LOCK_ICON)),
+    h('h1', null, 'Remove the lock?'),
+    h('p', null, 'The PIN cannot be recovered. You can remove the lock, but to keep your servers safe Hostdeck also deletes everything secret it stored:'),
+    h('ul', { class: 'lock-list' },
+      h('li', null, 'saved server passwords, pasted private keys and passphrases'),
+      h('li', null, 'saved browser passwords, cookies and sign-ins'),
+      h('li', null, 'command history')),
+    h('p', { class: 'muted' }, 'Your server list, snippets and settings stay. Key files on your computer are not touched. Open connections are closed.'),
+    h('div', { class: 'lock-actions' },
+      h('button', { class: 'btn', type: 'button', onclick: () => drawUnlock(el) }, 'Cancel'),
+      h('button', { class: 'btn danger solid', type: 'button', onclick: async () => {
+        await api.call('lock:reset');
+        for (const v of Object.values(state.views)) {
+          if (v.browser && v.browser.wrap) v.browser.wrap.remove();
+          v.browser = null;
+          v.history = [];
+        }
+        hideLock();
+        toast('The lock and all saved secrets were removed. Set a new PIN in Settings if you want one.');
+      } }, 'Delete secrets and remove lock'))));
+}
+
+function hideLock() {
+  if (!state.locked) return;
+  state.locked = false;
+  const el = document.getElementById('lock');
+  if (el) el.remove();
+  for (const id of LOCK_LAYERS) {
+    const node = document.getElementById(id);
+    if (node) node.inert = false;
+  }
+  document.body.classList.remove('locked');
+  if (!state.started) init().catch((err) => showError(err, 'Hostdeck failed to start'));
+  else { refreshServers().then(() => renderMain()); }
+}
+
+async function lockFromUi() {
+  const st = await api.call('lock:status');
+  if (st.enabled) await api.call('lock:now');
+  else { await openSettings(); toast('Set a PIN to lock Hostdeck.'); }
+}
+
+api.on('lock', ({ locked }) => (locked ? showLock() : hideLock()));
+
 api.on('menu', (action) => {
+  if (state.locked) return;
+  if (action === 'lock-setup') { modalStack.forEach((m) => m.close()); lockFromUi(); return; }
   if (modalStack.length) return;
   if (action === 'add-server') editServer();
   else if (action === 'import-ssh-config') importSshConfig();
@@ -2013,9 +2423,12 @@ api.on('menu', (action) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (state.locked) return;
   const mod = isMac ? e.metaKey : e.ctrlKey;
+  if (mod && e.shiftKey && (e.key === 'L' || e.key === 'l')) { e.preventDefault(); lockFromUi(); return; }
   if (!mod || modalStack.length) return;
   if (e.key === 'k') { e.preventDefault(); document.getElementById('search').focus(); }
+  if (e.shiftKey && (e.key === 'F' || e.key === 'f') && state.selected && view(state.selected).tab === 'browser') { e.preventDefault(); toggleFocusMode(); return; }
   if (e.key === 'f' && state.selected && view(state.selected).tab === 'files' && !view(state.selected).editor) {
     const box = document.getElementById('file-search');
     if (box) { e.preventDefault(); box.focus(); box.select(); }
@@ -2030,4 +2443,4 @@ window.addEventListener('beforeunload', (e) => {
   if (Object.values(state.views).some((v) => v.editor && v.editor.dirty)) e.returnValue = false;
 });
 
-init().catch((err) => showError(err, 'Hostdeck failed to start'));
+start().catch((err) => showError(err, 'Hostdeck failed to start'));

@@ -1,5 +1,12 @@
 Hostdeck is a local-first SSH server manager for Linux, Windows and macOS.
 
+## Changes in 0.4.0
+
+- Lock Hostdeck with a PIN (Settings → App lock). It locks at start, after a chosen idle time and when the computer sleeps; lock it any time with the lock button or Ctrl+Shift+L. Running connections and terminals keep going while it is locked. A forgotten PIN can be removed, which also deletes all saved secrets.
+- Saved browser passwords: after you sign in to a page in the Browser tab, Hostdeck offers to save the login. The key button next to the address bar fills it in, and a single saved login is filled automatically. Stored encrypted with the system keyring, per server and site.
+- Browser focus mode (expand button or Ctrl+Shift+F) hides the server list, header and tabs so the page fills the window; F11 toggles full screen.
+- Fixed: zoom shortcuts. Ctrl + / Ctrl - / Ctrl 0 (also on the numpad) zoom the page when it has focus, otherwise the whole app, and the app zoom is remembered.
+
 ## Changes in 0.3.0
 
 - Server health in the header while connected: disk, memory, load and uptime, refreshed about every 30 seconds. Disk and memory turn amber at 80% and red at 90%; hover for details, click to refresh.

@@ -20,11 +20,17 @@ function emptyData() {
     snippets: [],
     knownHosts: {},
     history: {},
+    logins: {}, // serverId -> origin -> [{ id, username, secret, updatedAt }]
+    loginNever: {}, // serverId -> [origin]
+    lock: null, // { salt, hash } when a PIN is set
     settings: {
       theme: 'system',
       keepOpenByDefault: false,
       agentPath: '',
       confirmDangerous: true,
+      uiZoom: 1,
+      autoLockMinutes: 15,
+      lockOnSleep: true,
     },
   };
 }
@@ -195,6 +201,8 @@ class Store {
     this.data.servers = this.data.servers.filter((s) => s.id !== id);
     for (const s of this.data.servers) if (s.jumpId === id) s.jumpId = '';
     delete this.data.history[id];
+    delete this.data.logins[id];
+    delete this.data.loginNever[id];
     this.save();
   }
 
@@ -216,6 +224,89 @@ class Store {
       s.lastUsedAt = Date.now();
       this.save();
     }
+  }
+
+  /** Remove every saved secret: server passwords, keys, passphrases and browser logins. */
+  clearAllSecrets() {
+    for (const s of this.data.servers) s.secrets = {};
+    this.data.logins = {};
+    this.save();
+  }
+
+  // ---- browser logins ----------------------------------------------------
+
+  _loginList(serverId, origin) {
+    const byServer = this.data.logins[serverId] || {};
+    return byServer[origin] || [];
+  }
+
+  listLogins(serverId, origin) {
+    return this._loginList(serverId, origin).map(({ id, username, updatedAt }) => ({ id, username, updatedAt }));
+  }
+
+  allLogins() {
+    const out = [];
+    for (const [serverId, byOrigin] of Object.entries(this.data.logins)) {
+      const server = this.data.servers.find((s) => s.id === serverId);
+      for (const [origin, list] of Object.entries(byOrigin)) {
+        for (const l of list) out.push({ serverId, serverName: server ? server.name : '', origin, id: l.id, username: l.username, updatedAt: l.updatedAt });
+      }
+    }
+    return out.sort((a, b) => a.serverName.localeCompare(b.serverName) || a.origin.localeCompare(b.origin) || a.username.localeCompare(b.username));
+  }
+
+  async getLoginPassword(serverId, origin, id) {
+    const l = this._loginList(serverId, origin).find((x) => x.id === id);
+    if (!l) throw new Error('Saved login not found');
+    return this._open(l.secret);
+  }
+
+  /** Save or update a login; one entry per username on a site. */
+  async saveLogin(serverId, origin, username, password) {
+    if (!this.data.servers.some((s) => s.id === serverId)) throw new Error('Server not found');
+    if (!/^https?:\/\/[^/]+$/.test(origin)) throw new Error('Invalid site');
+    const secret = await this._seal(String(password || ''));
+    if (!secret) throw new Error('Nothing to save');
+    const byServer = this.data.logins[serverId] || (this.data.logins[serverId] = {});
+    const list = byServer[origin] || (byServer[origin] = []);
+    const name = String(username || '');
+    let entry = list.find((x) => x.username === name);
+    if (!entry) {
+      entry = { id: newId(), username: name };
+      list.push(entry);
+    }
+    entry.secret = secret;
+    entry.updatedAt = Date.now();
+    const never = this.data.loginNever[serverId];
+    if (never) this.data.loginNever[serverId] = never.filter((o) => o !== origin);
+    this.save();
+    return { id: entry.id, username: entry.username, updatedAt: entry.updatedAt };
+  }
+
+  /** True if this exact username and password are already saved for the site. */
+  async hasLogin(serverId, origin, username, password) {
+    const l = this._loginList(serverId, origin).find((x) => x.username === String(username || ''));
+    if (!l) return false;
+    return (await this._open(l.secret)) === String(password || '');
+  }
+
+  deleteLogin(serverId, origin, id) {
+    const byServer = this.data.logins[serverId];
+    if (!byServer || !byServer[origin]) return;
+    byServer[origin] = byServer[origin].filter((x) => x.id !== id);
+    if (!byServer[origin].length) delete byServer[origin];
+    if (!Object.keys(byServer).length) delete this.data.logins[serverId];
+    this.save();
+  }
+
+  neverSaveFor(serverId, origin) {
+    const list = this.data.loginNever[serverId] || (this.data.loginNever[serverId] = []);
+    if (!list.includes(origin)) list.push(origin);
+    this.save();
+  }
+
+  isNeverSave(serverId, origin) {
+    return (this.data.loginNever[serverId] || []).includes(origin);
   }
 
   // ---- known hosts -------------------------------------------------------

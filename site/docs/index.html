@@ -42,6 +42,7 @@
         <p>Reference</p>
         <a href="#shortcuts">Keyboard shortcuts</a>
         <a href="#data">Your data and security</a>
+        <a href="#lock">Lock with a PIN</a>
         <a href="#settings">Settings</a>
         <a href="#troubleshooting">Troubleshooting</a>
         <a href="#source">Build from source</a>
@@ -234,6 +235,16 @@
           <li>Internal tools often use a self-signed certificate. Hostdeck stops and asks before continuing to such a site, once per address.</li>
           <li><strong>⋯ → Developer tools</strong> opens Chromium's developer tools for the page.</li>
         </ul>
+        <h3>Saved passwords</h3>
+        <p>When you sign in to a page, Hostdeck offers to save the username and password under the address bar: <strong>Save</strong>, <strong>Never for this site</strong> or <strong>Not now</strong>. Nothing is saved unless you choose Save. If you sign in with a different password later, the bar offers <strong>Update</strong> instead.</p>
+        <p>The key button at the right of the address bar shows how many logins are saved for the page you are on. The next time you open that sign-in page, a single saved login is filled in for you; with several, click the key button and pick one. Its menu can also copy a password. Saved logins belong to one server and one site address, so the phpMyAdmin login on one server is never offered on another.</p>
+        <p>Saved browser passwords are encrypted like server passwords (see <a href="#data">Your data and security</a>) and need the system keyring: without one, Hostdeck says it can't save them. Manage or delete them in Settings → <strong>Saved browser passwords</strong>. They are never included in an export, and deleting a server deletes its saved logins.</p>
+        <h3>More room for the page</h3>
+        <ul>
+          <li><strong>Focus mode</strong> (the expand button at the right of the address bar, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) hides the server list, the header and the tabs so the page fills the window. Press it again to bring them back.</li>
+          <li><strong>Full screen</strong> (<kbd>F11</kbd>, or <kbd>Ctrl</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd> on a Mac) fills the whole screen. Together with focus mode, only the address bar is left.</li>
+          <li><strong>Zoom</strong>: <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>-</kbd> and <kbd>Ctrl</kbd>+<kbd>0</kbd> while the page has focus zoom only the page. The same keys elsewhere zoom the whole app, and Hostdeck remembers that zoom.</li>
+        </ul>
         <h3>Connection</h3>
         <p>The browser needs the server to be connected and keeps the connection open while you use it. If the connection drops, the page is hidden until you choose <strong>Reconnect</strong>, then it picks up where you were. Pages stay open while you switch to other tabs or servers.</p>
         <p>Behind the scenes, Hostdeck runs a small proxy on your computer, listening on <code>127.0.0.1</code> only, that opens each connection from the server's side. It is the same thing <code>ssh -D</code> does, and it stops when you disconnect. The server needs SSH port forwarding enabled, which is the default for OpenSSH.</p>
@@ -258,6 +269,10 @@
             <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd> in Browser</td><td>Go to the address bar</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd> or <kbd>F5</kbd> in Browser</td><td>Reload the page</td></tr>
             <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> in Browser</td><td>Back / forward</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> in Browser</td><td>Focus mode: the page fills the window</td></tr>
+            <tr><td><kbd>F11</kbd> (<kbd>Ctrl</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd> on a Mac)</td><td>Full screen</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></td><td>Zoom in / out / actual size (the page when it has focus, otherwise the app)</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td><td>Lock Hostdeck</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Settings</td></tr>
             <tr><td>Double-click a server</td><td>Connect</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>Close a dialog or menu</td></tr>
@@ -279,6 +294,15 @@
         <h3>How secrets are protected</h3>
         <p>Saved passwords, pasted private keys and passphrases are encrypted before they are written, using the macOS Keychain, Windows DPAPI, or the Linux secret service (GNOME Keyring or KWallet). Key files you choose with Browse are never copied; only their path is saved. Settings shows which secret storage is in use.</p>
         <div class="callout warn"><p>On Linux without a keyring, saved passwords can only be lightly obscured, and Hostdeck warns you in the server form. On those systems, prefer an SSH key, the SSH agent, or “Ask for the password every time”.</p></div>
+        <h3 id="lock">Lock with a PIN</h3>
+        <p>Set a PIN in Settings → <strong>App lock</strong> to keep others from using Hostdeck on your computer. The PIN is 4 to 12 digits and only a salted hash of it is stored.</p>
+        <ul>
+          <li>Hostdeck locks every time it starts, after a set time without using the computer (5, 15, 30 or 60 minutes, or never), and, if you leave it on, when the computer sleeps or the screen locks.</li>
+          <li>Lock it yourself with the lock button at the bottom of the server list or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>, also while a page in the Browser tab has focus.</li>
+          <li>While locked, the window hides everything and Hostdeck's background process refuses every request except unlocking. Connections, terminals and port forwards keep running, so long commands are not interrupted.</li>
+          <li>After 5 wrong PINs you have to wait 30 seconds, and the wait doubles with each further miss, up to 5 minutes.</li>
+        </ul>
+        <p>A forgotten PIN can't be recovered. <strong>Forgot your PIN?</strong> on the lock screen removes the lock, and to keep your servers safe it also deletes every saved secret: server passwords, pasted keys and passphrases, saved browser passwords and cookies, and command history. Your server list, snippets and settings stay, and key files on your computer are not touched.</p>
         <h3>Moving to another computer</h3>
         <p>Settings → <strong>Export servers</strong> saves your servers and snippets to a JSON file. Passwords and keys are never included. On the other computer, use <strong>Import servers</strong>, then re-enter passwords or point to your key files.</p>
         <h3>Inside the app</h3>
@@ -292,6 +316,8 @@
           <li><strong>Ask before running commands that look destructive</strong>: on by default.</li>
           <li><strong>SSH agent path</strong>: a custom agent socket, a Windows named pipe, or <code>pageant</code>.</li>
           <li><strong>Trusted host keys</strong>: every remembered fingerprint, with Forget.</li>
+          <li><strong>App lock</strong>: set, change or remove the PIN, when to lock automatically, and whether to lock when the computer sleeps. See <a href="#lock">Lock with a PIN</a>.</li>
+          <li><strong>Saved browser passwords</strong>: every login saved in the Browser tab, by server and site, with Delete.</li>
           <li><strong>Your data</strong>: where the file is, which secret storage is used, and export or import of servers.</li>
         </ul>
 

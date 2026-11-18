@@ -77,6 +77,7 @@ A read-only report inspired by the CIS Benchmarks, without copying them and with
 
 | Version | Highlights |
 | --- | --- |
+| 0.4.0 | PIN lock with auto-lock; saved browser passwords with autofill; browser focus mode and full screen; working zoom shortcuts |
 | 0.3.0 | Server health in the header: disk, memory, load, uptime |
 | 0.2.1 | Server group shown next to the name |
 | 0.2.0 | Browser tab that loads pages through the server; file search in the folder and all subfolders |
